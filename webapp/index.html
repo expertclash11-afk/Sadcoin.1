@@ -9,8 +9,7 @@
     <style>
         :root {
             --bg-deep: #060913;
-            --card-bg: rgba(15, 23, 42, 0.75);
-            --accent: #f59e0b;
+            --card-bg: rgba(15, 23, 42, 0.85);
         }
         body { 
             background-color: var(--bg-deep); 
@@ -34,7 +33,6 @@
         }
         .coin-btn:active { 
             transform: scale(0.92); 
-            box-shadow: 0 8px 20px rgba(234, 179, 8, 0.2), inset 0 2px 4px rgba(255, 255, 255, 0.4), inset 0 -2px 4px rgba(0, 0, 0, 0.5);
         }
         @keyframes floatUp {
             0% { transform: translate(-50%, 0px) scale(0.8); opacity: 1; }
@@ -68,22 +66,22 @@
 
     <!-- Bottom Navigation -->
     <div class="absolute bottom-0 left-0 right-0 glass-card border-t border-white/10 flex justify-around py-3 px-1 z-50 shadow-[0_-10px_30px_rgba(0,0,0,0.5)]">
-        <button onclick="switchTab('tap')" class="tab-btn flex flex-col items-center text-slate-400 hover:text-yellow-400 text-[11px] font-semibold transition-all" data-tab="tap">
+        <button onclick="switchTab('tap')" class="tab-btn flex flex-col items-center text-yellow-400 scale-105 text-[11px] font-semibold transition-all" data-tab="tap">
             <span class="text-xl mb-0.5">🪙</span>Тап
         </button>
-        <button onclick="switchTab('cases')" class="tab-btn flex flex-col items-center text-slate-400 hover:text-yellow-400 text-[11px] font-semibold transition-all" data-tab="cases">
+        <button onclick="switchTab('cases')" class="tab-btn flex flex-col items-center text-slate-400 text-[11px] font-semibold transition-all" data-tab="cases">
             <span class="text-xl mb-0.5">🎁</span>Кейсы
         </button>
-        <button onclick="switchTab('inv')" class="tab-btn flex flex-col items-center text-slate-400 hover:text-yellow-400 text-[11px] font-semibold transition-all" data-tab="inv">
+        <button onclick="switchTab('inv')" class="tab-btn flex flex-col items-center text-slate-400 text-[11px] font-semibold transition-all" data-tab="inv">
             <span class="text-xl mb-0.5">🎒</span>Инвентарь
         </button>
-        <button onclick="switchTab('up')" class="tab-btn flex flex-col items-center text-slate-400 hover:text-yellow-400 text-[11px] font-semibold transition-all" data-tab="up">
+        <button onclick="switchTab('up')" class="tab-btn flex flex-col items-center text-slate-400 text-[11px] font-semibold transition-all" data-tab="up">
             <span class="text-xl mb-0.5">⚡</span>Прокачка
         </button>
-        <button onclick="switchTab('tasks')" class="tab-btn flex flex-col items-center text-slate-400 hover:text-yellow-400 text-[11px] font-semibold transition-all" data-tab="tasks">
+        <button onclick="switchTab('tasks')" class="tab-btn flex flex-col items-center text-slate-400 text-[11px] font-semibold transition-all" data-tab="tasks">
             <span class="text-xl mb-0.5">📋</span>Задания
         </button>
-        <button onclick="switchTab('top')" class="tab-btn flex flex-col items-center text-slate-400 hover:text-yellow-400 text-[11px] font-semibold transition-all" data-tab="top">
+        <button onclick="switchTab('top')" class="tab-btn flex flex-col items-center text-slate-400 text-[11px] font-semibold transition-all" data-tab="top">
             <span class="text-xl mb-0.5">🏆</span>Топ
         </button>
     </div>
@@ -117,7 +115,7 @@
         function updateState(newState) {
             state = newState;
             document.getElementById('balance').innerText = state.me.coins.toLocaleString();
-            document.getElementById('energy').innerText = state.me.energy + '/' + state.me.max_energy;
+            document.getElementById('energy').innerText = Math.floor(state.me.energy) + '/' + state.me.max_energy;
             renderTab();
         }
 
@@ -166,7 +164,7 @@
                         <div class="w-full space-y-2">
                             <div class="flex justify-between text-xs font-bold text-slate-400 px-1">
                                 <span>⚡ Энергия</span>
-                                <span class="text-emerald-400 font-mono">${state.me.energy} / ${state.me.max_energy}</span>
+                                <span class="text-emerald-400 font-mono">${Math.floor(state.me.energy)} / ${state.me.max_energy}</span>
                             </div>
                             <div class="w-full bg-slate-950/80 rounded-full h-4 p-0.5 border border-white/10 shadow-inner">
                                 <div class="bg-gradient-to-r from-emerald-500 to-teal-400 h-full rounded-full transition-all duration-150 shadow-[0_0_12px_rgba(16,185,129,0.5)]" style="width: ${(state.me.energy / state.me.max_energy) * 100}%"></div>
@@ -297,4 +295,12 @@
                 el.style.left = clientX + 'px';
                 el.style.top = clientY + 'px';
                 document.body.appendChild(el);
-                setTimeout(() => el.remove(),
+                setTimeout(() => el.remove(), 550);
+            }
+        }
+
+        async function openCase(caseKey) {
+            if (tg.HapticFeedback) tg.HapticFeedback.impactOccurred('heavy');
+            const res = await api('open', { case: caseKey });
+            if (res && res.drop) {
+                
