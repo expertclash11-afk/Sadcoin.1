@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SadCat Coin</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <style>
+        body { background-color: #0f172a; color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+        .tap-btn:active { transform: scale(0.95); }
+    </style>
+</head>
+<body class="flex flex-col h-screen select-none overflow-hidden">
+    <!-- Top Stats -->
+    <div class="bg-slate-800/85 backdrop-blur border-b border-slate-700 p-4 flex justify-between items-center shadow-lg">
+        <div class="flex items-center space-x-2">
+            <span class="text-2xl">🐱</span>
+            <div>
+                <div class="text-xs text-slate-400">Баланс</div>
+                <div class="text-xl font-bold text-yellow-400" id="balance">0</div>
+            </div>
+        </div>
+        <div class="text-right">
+            <div class="text-xs text-slate-400">Энергия</div>
+            <div class="text-sm font-semibold text-emerald-400" id="energy">500/500</div>
+        </div>
+    </div>
+
+    <!-- Main Content Area -->
+    <div id="content" class="flex-1 overflow-y-auto p-4 pb-20">
+        <!-- Tabs injected dynamically -->
+    </div>
+
+    <!-- Bottom Navigation -->
+    <div class="absolute bottom-0 left-0 right-0 bg-slate-900 border-t border-slate-800 flex justify-around py-3 px-2 z-50">
+        <button onclick="switchTab('tap')" class="tab-btn flex flex-col items-center text-slate-400 hover:text-yellow-400 text-xs" data-tab="tap">
+            <span class="text-lg">👆</span>Тап
+        </button>
+        <button onclick="switchTab('cases')" class="tab-btn flex flex-col items-center text-slate-400 hover:text-yellow-400 text-xs" data-tab="cases">
+            <span class="text-lg">🎁</span>Кейсы
+        </button>
+        <button onclick="switchTab('inv')" class="tab-btn flex flex-col items-center text-slate-400 hover:text-yellow-400 text-xs" data-tab="inv">
+            <span class="text-lg">🎒</span>Инвентарь
+        </button>
+        <button onclick="switchTab('up')" class="tab-btn flex flex-col items-center text-slate-400 hover:text-yellow-400 text-xs" data-tab="up">
+            <span class="text-lg">⬆️</span>Прокачка
+        </button>
+        <button onclick="switchTab('tasks')" class="tab-btn flex flex-col items-center text-slate-400 hover:text-yellow-400 text-xs" data-tab="tasks">
+            <span class="text-lg">📋</span>Задания
+        </button>
+        <button onclick="switchTab('top')" class="tab-btn flex flex-col items-center text-slate-400 hover:text-yellow-400 text-xs" data-tab="top">
+            <span class="text-lg">🏆</span>Топ
+        </button>
+    </div>
+
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.expand();
+        const initData = tg.initData || '';
+
+        let state = null;
+        let currentTab = 'tap';
+
+        async function api(action, data = {}) {
+            try {
+                const res = await fetch('/api/' + action, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Init-Data': initData
+                    },
+                    body: JSON.stringify(data)
+                });
+                const json = await res.json();
+                if (json.error) {
+                    tg.showAlert(json.error);
+                }
+                if (json.state) {
+                    updateState(json.state);
+                }
+                return json;
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+        function updateState(newState) {
+            state = newState;
+            document.getElementById('balance').innerText = state.me.coins.toLocaleString();
+            document.getElementById('energy').innerText = state.me.energy + '/' + state.me.max_energy;
+            renderTab();
+        }
+
+        function switchTab(tab) {
+            currentTab = tab;
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                if (btn.dataset.tab === tab) {
+                    btn.classList.add('text-yellow-400');
+                    btn.classList.remove('text-slate-400');
+                } else {
+                    btn.classList.remove('text-yellow-400');
+                    btn.classList.add('text-slate-400');
+                }
+            });
+            renderTab();
+        }
+
+        function renderTab() {
+            if (!state) return;
+            const container = document.getElementById('content');
+            if (currentTab === 'tap') {
+                container.innerHTML = `
+                    <div class="flex flex-col items-center justify-center h-full space-y-6">
+                        <div class="text-center">
+                            <div class="text-slate-400 text-sm">Сила тапа: +${state.me.tap_power}</div>
+                            <div class="text-slate-400 text-sm">Пассивный доход: ${state.me.passive}/час</div>
+                        </div>
+                        <button onclick="doTap(event)" class="tap-btn w-48 h-48 bg-gradient-to-br from-yellow-500 to-amber-600 rounded-full flex items-center justify-center shadow-2xl shadow-yellow-500/20 border-4 border-yellow-400/50 cursor-pointer transition transform active:scale-95">
+                            <span class="text-7xl select-none">🐱</span>
+                        </button>
+                        <div class="w-full bg-slate-800 rounded-full h-4 overflow-hidden border border-slate-700">
+                            <div class="bg-gradient-to-r from-emerald-500 to-teal-400 h-full transition-all duration-200" style="width: ${(state.me.energy / state.me.max_energy) * 100}%"></div>
+                        </div>
+                    </div>
+                `;
+            } else if (currentTab === 'cases') {
+                let html = '<div class="space-y-4"><h2 class="text-xl font-bold mb-4">🎁 Кейсы</h2>';
+                for (const [key, c] of Object.entries(state.cases)) {
+                    html += `
+                        <div class="bg-slate-800/90 border border-slate-700 rounded-xl p-4 shadow-lg">
+                            <div class="flex justify-between items-center mb-2">
+                                <span class="font-bold text-lg">${c.name}</span>
+                                <button onclick="openCase('${key}')" class="bg-yellow-500 hover:bg-yellow-400 text-slate-900 font-bold px-4 py-2 rounded-lg shadow">Открыть (${c.price.toLocaleString()} 💰)</button>
+                            </div>
+                            <div class="text-xs text-slate-400 space-y-1">
+                                ${Object.entries(c.drops).map(([i, w]) => `<div>${state.items[i].name} (${state.items[i].rarity}) —${w}%</div>`).join('')}
+                            </div>
+                        </div>
+                    `;
+                }
+                html += '</div>';
+                container.innerHTML = html;
+            } else if (currentTab === 'inv') {
+                let itemsHtml = '';
+                const inv = state.inv;
+                if (Object.keys(inv).length === 0) {
+                    itemsHtml = '<div class="text-center text-slate-500 py-12">Инвентарь пуст. Откройте кейсы!</div>';
+                } else {
+                    itemsHtml = '<div class="grid grid-cols-1 gap-3">';
+                    for (const [itemKey, qty] of Object.entries(inv)) {
+                        const item = state.items[itemKey];
+                        itemsHtml += `
+                            <div class="bg-slate-800 border border-slate-700 rounded-xl p-3 flex justify-between items-center">
+                                <div>
+                                    <div class="font-bold">${item.name} ×${qty}</div>
+                                    <div class="text-xs text-slate-400">${item.rarity} · Цена: ${item.value.toLocaleString()} 💰</div>
+                                </div>
+                                <button onclick="sellItem('${itemKey}')" class="bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/30 px-3 py-1.5 rounded-lg text-sm font-semibold">Продать</button>
+                            </div>
+                        `;
+                    }
+                    itemsHtml += '</div>';
+                    itemsHtml += `<button onclick="sellItem('all')" class="w-full mt-4 bg-red-600 hover:bg-red-500 text-white font-bold py-3 rounded-xl shadow-lg">Продать всё</button>`;
+                }
+                container.innerHTML = `<h2 class="text-xl font-bold mb-4">🎒 Инвентарь</h2>` + itemsHtml;
+            } else if (currentTab === 'up') {
+                container.innerHTML = `
+                    <h2 class="text-xl font-bold mb-4">⬆️ Улучшения</h2>
+                    <div class="space-y-4">
+                        <div class="bg-slate-800 border border-slate-700 rounded-xl p-4 flex justify-between items-center">
+                            <div>
+                                <div class="font-bold text-lg">Сила тапа (+1)</div>
+                                <div class="text-xs text-slate-400">Текущая: +${state.me.tap_power}</div>
+                            </div>
+                            <button onclick="buyUpgrade('tap')" class="bg-yellow-500 hover:bg-yellow-400 text-slate-900 font-bold px-4 py-2 rounded-lg shadow">${state.costs.tap.toLocaleString()} 💰</button>
+                        </div>
+                        <div class="bg-slate-800 border border-slate-700 rounded-xl p-4 flex justify-between items-center">
+                            <div>
+                                <div class="font-bold text-lg">Пассивный доход (+100/ч)</div>
+                                <div class="text-xs text-slate-400">Текущий: ${state.me.passive}/час</div>
+                            </div>
+                            <button onclick="buyUpgrade('pass')" class="bg-yellow-500 hover:bg-yellow-400 text-slate-900 font-bold px-4 py-2 rounded-lg shadow">${state.costs.pass.toLocaleString()} 💰</button>
+                        </div>
+                    </div>
+                `;
+            } else if (currentTab === 'tasks') {
+                let tasksHtml = '';
+                if (state.daily.left <= 0) {
+                    tasksHtml += `<button onclick="claimDaily()" class="w-full mb-4 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 rounded-xl shadow-lg">🎁 Забрать ежедневный бонус (+${state.daily.reward.toLocaleString()})</button>`;
+                } else {
+                    const h = Math.floor(state.daily.left / 3600);
+                    const m = Math.floor((state.daily.left % 3600) / 60);
+                    tasksHtml += `<div class="bg-slate-800/50 border border-slate-700 text-center p-3 rounded-xl mb-4 text-slate-400 text-sm">🎁 Ежедневный бонус доступен через ${h}ч ${m}м</div>`;
+                }
+
+                tasksHtml += `<div class="bg-slate-800 border border-slate-700 rounded-xl p-4 mb-4">
+                    <div class="font-bold mb-1">🔗 Реферальная ссылка</div>
+                    <div class="text-xs text-slate-400 mb-2">Приглашайте друзей и получайте награды!</div>
+                    <input type="text" readonly value="${state.link}" onclick="this.select()" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-yellow-400 select-all">
+                </div>`;
+
+                for (const t of state.tasks) {
+                    tasksHtml += `
+                        <div class="bg-slate-800 border border-slate-700 rounded-xl p-4 mb-3 flex justify-between items-center">
+                            <div>
+                                <div class="font-bold">${t.title}</div>
+                                <div class="text-xs text-slate-400">${t.progress.toLocaleString()} / ${t.goal.toLocaleString()} · Награда: +${t.reward.toLocaleString()} 💰</div>
+                            </div>
+                            ${t.done ? '<span class="text-emerald-400 font-bold text-sm">✓ Готово</span>' : (t.progress >= t.goal ? `<button onclick="claimTask('${t.key}')" class="bg-emerald-500 hover:bg-emerald-400 text-slate-900 font-bold px-3 py-1.5 rounded-lg text-sm">Забрать</button>` : '<span class="text-slate-500 text-sm">В процессе</span>')}
+                        </div>
+                    `;
+                }
+                container.innerHTML = `<h2 class="text-xl font-bold mb-4">📋 Задания</h2>` + tasksHtml;
+            } else if (currentTab === 'top') {
+                let topHtml = '<div class="space-y-2">';
+                state.top.forEach((u, index) => {
+                    topHtml += `
+                        <div class="bg-slate-800 border border-slate-700 rounded-xl p-3 flex justify-between items-center">
+                            <div class="flex items-center space-x-3">
+                                <span class="font-bold text-yellow-400 w-6">#${index + 1}</span>
+                                <span>${u.name}</span>
+                            </div>
+                            <span class="font-bold text-yellow-400">${u.coins.toLocaleString()} 💰</span>
+                        </div>
+                    `;
+                });
+                topHtml += '</div>';
+                container.innerHTML = `<h2 class="text-xl font-bold mb-4">🏆 Топ игроков</h2>` + topHtml;
+            }
+        }
+
+        async function doTap(e) {
+            const res = await api('tap', { n: 1 });
+            if (res && res.counted) {
+                const rect = e.target.getBoundingClientRect();
+                const x = e.clientX || (rect.left + rect.width / 2);
+                const y = e.clientY || (rect.top + rect.height / 2);
+                const el = document.createElement('div');
+                el.innerText = '+' + (state.me.tap_power);
+                el.className = 'fixed text-yellow-400 font-bold text-xl pointer-events-none transition-all duration-700 transform -translate-x-1/2 -translate-y-1/2 z-50';
+                el.style.left = x + 'px';
+                el.style.top = y + 'px';
+                document.body.appendChild(el);
+                setTimeout(() => {
+                    el.style.transform = 'translate(-50%, -100px) scale(1.2)';
+                    el.style.opacity = '0';
+                }, 50);
+                setTimeout(() => el.remove(), 700);
+            }
+        }
+
+        async function openCase(caseKey) {
+            const res = await api('open', { case: caseKey });
+            if (res && res.drop) {
+                const item = state.items[res.drop];
+                tg.showAlert(`🎉 Вам выпало:\n\n${item.name}\nРедкость: ${item.rarity}\nЦена: ${item.value.toLocaleString()} 💰`);
+            }
+        }
+
+        async function sellItem(itemKey) {
+            await api('sell', { item: itemKey });
+        }
+
+        async function buyUpgrade(kind) {
+            await api('buy', { kind: kind });
+        }
+
+        async function claimTask(key) {
+            const res = await api('claim', { key: key });
+            if (res && res.got) {
+                tg.showAlert(`🎉 Получено +${res.got.toLocaleString()} sadcoin!`);
+            }
+        }
+
+        async function claimDaily() {
+            const res = await api('daily');
+            if (res && res.got) {
+                tg.showAlert(`🎁 Получен ежедневный бонус: +${res.got.toLocaleString()} sadcoin!`);
+            }
+        }
+
+        api('state');
+    </script>
+</body>
+          </html>
+          
