@@ -1,11 +1,9 @@
 services:
   - type: web
-    name: sadcat-coin
-    runtime: python
-    plan: free
+    name: sadcoin-1
+    env: python
     buildCommand: pip install -r requirements.txt
-    startCommand: python bot.py
-    healthCheckPath: /healthz
+    startCommand: python server.py
     envVars:
       - key: BOT_TOKEN
         sync: false
