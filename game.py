@@ -1,6 +1,6 @@
 import os, random, sqlite3, time
 
-DB_PATH = os.getenv("DB_PATH", "game.db")  # на Render free файл стирается при рестарте
+DB_PATH = os.getenv("DB_PATH", "game.db")
 db = sqlite3.connect(DB_PATH, check_same_thread=False)
 db.row_factory = sqlite3.Row
 db.executescript("""
@@ -20,20 +20,26 @@ REF_MIN_TAPS, REF_REWARD = 100, 5000
 DAILY_REWARD, CHANNEL_REWARD = 2000, 10000
 TRADE_MIN_TAPS, TRADE_DAILY_LIMIT, TRADE_TTL = 100, 10, 3600
 
-# предмет: (название, редкость, цена продажи)
+# Предметы (включая мега-редкий космический предмет)
 ITEMS = {
     "mouse": ("🐭 Игрушечная мышь", "Обычная", 150),
     "fish": ("🐟 Грустная рыбка", "Обычная", 400),
     "yarn": ("🧶 Клубок печали", "Редкая", 1500),
+    "potion": ("🧪 Зелье Мяу-эликсира", "Редкая", 3500),
     "crown": ("👑 Корона кота", "Эпическая", 8000),
+    "sword": ("⚔️ Меч СадКата", "Эпическая", 18000),
     "star": ("🌟 Звезда SadCat", "Мифическая", 50000),
+    "blackhole": ("🪐 Черная дыра SadCat", "МЕГА-ЛЕГЕНДАРНАЯ", 500000),
 }
-# кейс: (название, цена, {предмет: вес})
+
+# Кейсы сбалансированы под новые предметы
 CASES = {
-    "basic": ("📦 Обычный кейс", 500, {"mouse": 600, "fish": 320, "yarn": 75, "crown": 5}),
-    "premium": ("💎 Премиум кейс", 5000, {"fish": 500, "yarn": 380, "crown": 100, "star": 20}),
+    "basic": ("📦 Обычный кейс", 500, {"mouse": 600, "fish": 320, "yarn": 70, "crown": 10}),
+    "premium": ("💎 Премиум кейс", 5000, {"fish": 450, "yarn": 300, "potion": 150, "crown": 80, "star": 20}),
+    "epic": ("🔮 Эпический кейс", 25000, {"potion": 300, "crown": 350, "sword": 250, "star": 95, "blackhole": 5}),
+    "legendary": ("👑 Легендарный кейс", 100000, {"sword": 400, "star": 450, "blackhole": 150}),
 }
-# задание: (название, тип, цель, награда)
+
 TASKS = {
     "taps100": ("Сделай 100 тапов", "taps", 100, 1000),
     "taps5000": ("Сделай 5 000 тапов", "taps", 5000, 10000),
@@ -92,7 +98,6 @@ def inv_get(uid):
     return db.execute("SELECT item, qty FROM inv WHERE uid=? AND qty>0 ORDER BY item", (uid,)).fetchall()
 
 
-# ---------- тапы и улучшения ----------
 def tap(uid, n=1):
     u = get_user(uid)
     now = time.time()
@@ -133,7 +138,6 @@ def buy_upgrade(uid, kind):
     db.commit()
 
 
-# ---------- кейсы и инвентарь ----------
 def open_case(uid, key):
     if key not in CASES:
         raise GameError("Нет такого кейса")
@@ -167,7 +171,6 @@ def sell_all(uid):
     return total
 
 
-# ---------- рефералы и задания ----------
 def register_referral(new_id, ref_id):
     if new_id == ref_id or not user_exists(ref_id):
         return False
@@ -224,7 +227,6 @@ def top_users(n=10):
     return db.execute("SELECT name, coins FROM users ORDER BY coins DESC LIMIT ?", (n,)).fetchall()
 
 
-# ---------- обмен (предмет отдающего хранится в эскроу) ----------
 def find_user(text):
     t = text.strip()
     if t.startswith("@"):
@@ -305,3 +307,4 @@ def decline_trade(tid, uid):
     db.execute("UPDATE trades SET status='declined' WHERE id=?", (tid,))
     db.commit()
     return t
+                             
