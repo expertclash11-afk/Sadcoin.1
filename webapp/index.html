@@ -1,416 +1,199 @@
-<!DOCTYPE html>
-<html lang="ru">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-<title>SadCat Coin</title>
-<script src="https://telegram.org/js/telegram-web-app.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
-<style>
-    :root {
-        --bg-deep: #060913;
-        --card-bg: rgba(15, 23, 42, 0.85);
+import os
+import json
+import logging
+from aiohttp import web
+from aiogram import Bot, Dispatcher, types
+from aiogram.filters import Command
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
+
+import game
+
+BOT_TOKEN = os.getenv("BOT_TOKEN", "8665264971:AAGrdMukPST-IjFpv6j9037Pe5k31FHMtuk")
+PORT = int(os.getenv("PORT", 10000))
+
+bot = Bot(token=BOT_TOKEN)
+dp = Dispatcher()
+
+logging.basicConfig(level=logging.INFO)
+
+# --- Telegram Bot Handlers ---
+@dp.message(Command("start"))
+async def cmd_start(message: types.Message):
+    args = message.text.split()
+    if len(args) > 1 and args[1].isdigit():
+        game.register_referral(message.from_user.id, int(args[1]))
+    
+    game.get_user(message.from_user.id, message.from_user.first_name, message.from_user.username)
+    
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🎮 Играть в SadCat Coin", web_app=WebAppInfo(url=os.getenv("WEBAPP_URL", "https://sadcoin-1.onrender.com")))]
+    ])
+    await message.answer(
+        "🐱 **Добро пожаловать в SadCat Coin!**\n\nТапай по коту, открывай кейсы, собирай редкие предметы и поднимайся в топе игроков!",
+        reply_markup=kb,
+        parse_mode="Markdown"
+    )
+
+# --- Web API Handlers for Mini App ---
+async def handle_state(request):
+    uid = int(request.headers.get("X-User-ID", 12345)) # Упрощенная идентификация для стабильности
+    u = game.get_user(uid)
+    ref_t, ref_p = game.ref_counts(uid)
+    
+    state = {
+        "me": u,
+        "items": {k: {"name": v[0], "rarity": v[1], "value": v[2]} for k, v in game.ITEMS.items()},
+        "cases": {k: {"name": v[0], "price": v[1], "drops": v[2]} for k, v in game.CASES.items()},
+        "inv": {r["item"]: r["qty"] for r in game.inv_get(uid)},
+        "costs": {
+            "tap": game.tap_upgrade_cost(u),
+            "pass": game.passive_upgrade_cost(u)
+        },
+        "daily": {
+            "left": game.daily_left(u),
+            "reward": game.DAILY_REWARD
+        },
+        "tasks": [
+            {
+                "key": k,
+                "title": t[0],
+                "goal": t[2],
+                "reward": t[3],
+                "progress": game.task_progress(u, t[1]),
+                "done": k in game.done_tasks(uid)
+            } for k, t in game.TASKS.items()
+        ],
+        "top": [{"name": r["name"], "coins": r["coins"]} for r in game.top_users()],
+        "link": f"https://t.me/{(await bot.get_me()).username}?start={uid}"
     }
-    html, body { margin: 0; }
-    body {
-        height: var(--tg-viewport-stable-height, 100dvh);
-        background-color: var(--bg-deep);
-        background-image: radial-gradient(circle at 50% 0%, #1e1b4b 0%, #060913 70%);
-        color: #f8fafc;
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-        touch-action: manipulation;
-        user-select: none;
-        -webkit-user-select: none;
-        -webkit-tap-highlight-color: transparent;
-        overscroll-behavior: none;
-    }
-    .glass-card {
-        background: var(--card-bg);
-        backdrop-filter: blur(16px);
-        -webkit-backdrop-filter: blur(16px);
-        border: 1px solid rgba(255, 255, 255, 0.08);
-    }
-    .coin-btn {
-        touch-action: none;
-        transition: transform 0.06s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-        background: radial-gradient(circle at 30% 30%, #fde047 0%, #eab308 50%, #ca8a04 100%);
-        box-shadow: 0 15px 35px rgba(234, 179, 8, 0.3), inset 0 2px 6px rgba(255, 255, 255, 0.6), inset 0 -4px 8px rgba(0, 0, 0, 0.4);
-    }
-    .coin-btn:active { transform: scale(0.92); }
-    button:focus-visible { outline: 2px solid #fde047; outline-offset: 2px; }
-    button:disabled { opacity: .5; }
-    .dim { opacity: .45; }
+    return web.json_response({"state": state})
 
-    @keyframes floatUp {
-        0%   { transform: translate(-50%, 0px) scale(0.8); opacity: 1; }
-        50%  { transform: translate(-50%, -60px) scale(1.25); opacity: 1; }
-        100% { transform: translate(-50%, -120px) scale(1); opacity: 0; }
-    }
-    .floating-num { animation: floatUp 0.55s ease-out forwards; }
+async def handle_tap(request):
+    data = await request.json()
+    uid = int(request.headers.get("X-User-ID", 12345))
+    n = int(data.get("n", 1))
+    counted = game.tap(uid, n)
+    u = game.get_user(uid)
+    return web.json_response({"counted": counted, "state": {"me": u, "inv": {r["item"]: r["qty"] for r in game.inv_get(uid)}}})
 
-    @keyframes toastIn { from { transform: translate(-50%, -12px); opacity: 0; } to { transform: translate(-50%, 0); opacity: 1; } }
-    .toast { animation: toastIn .18s ease-out; }
-
-    @keyframes pop { 0% { transform: scale(.7); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
-    .pop { animation: pop .3s cubic-bezier(.2,1.4,.4,1); }
-
-    /* Rarity */
-    .r-common { --rc: #94a3b8; }
-    .r-rare   { --rc: #38bdf8; }
-    .r-epic   { --rc: #c084fc; }
-    .r-leg    { --rc: #facc15; }
-    .r-text { color: var(--rc); }
-    .r-bar  { border-left: 3px solid var(--rc); }
-
-    /* Roulette */
-    .rl-item {
-        flex: none; width: 104px; height: 112px; margin-right: 8px;
-        display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
-        border-radius: 14px; border: 2px solid var(--rc);
-        background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(0,0,0,.25));
-        text-align: center; padding: 4px;
-    }
-    .rl-marker {
-        position: absolute; top: 0; bottom: 0; left: 50%; width: 3px; margin-left: -1.5px;
-        background: #fde047; box-shadow: 0 0 12px #fde047; pointer-events: none; z-index: 2;
-    }
-
-    ::-webkit-scrollbar { width: 4px; }
-    ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.15); border-radius: 4px; }
-
-    @media (prefers-reduced-motion: reduce) {
-        .floating-num, .toast, .pop { animation-duration: .01s; }
-        .coin-btn { transition: none; }
-    }
-</style>
-</head>
-<body class="flex flex-col overflow-hidden">
-
-<!-- Top Bar -->
-<header class="glass-card border-b p-4 flex justify-between items-center z-20 shadow-2xl" style="padding-top: calc(1rem + env(safe-area-inset-top, 0px));">
-    <div class="flex items-center space-x-3">
-        <div class="w-11 h-11 rounded-2xl bg-gradient-to-tr from-yellow-500 to-amber-300 flex items-center justify-center text-2xl shadow-lg shadow-yellow-500/20">🪙</div>
-        <div>
-            <div class="text-[10px] uppercase tracking-widest text-slate-400 font-bold">Баланс SadCoin</div>
-            <div class="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 via-amber-400 to-yellow-500 tracking-tight" id="balance">0</div>
-        </div>
-    </div>
-    <div class="text-right glass-card px-3 py-1.5 rounded-xl border border-white/5">
-        <div class="text-[9px] uppercase tracking-wider text-slate-400 font-semibold">Энергия</div>
-        <div class="text-xs font-black text-emerald-400" id="energy">0/0</div>
-    </div>
-</header>
-
-<!-- Main Content -->
-<main id="content" class="flex-1 min-h-0 overflow-y-auto p-4" style="padding-bottom: calc(7rem + env(safe-area-inset-bottom, 0px));"></main>
-
-<!-- Bottom Navigation -->
-<nav class="fixed bottom-0 left-0 right-0 glass-card border-t border-white/10 flex justify-around pt-3 px-1 z-50 shadow-[0_-10px_30px_rgba(0,0,0,0.5)]" style="padding-bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));">
-    <button data-act="tab" data-key="tap"   class="tab-btn flex flex-col items-center text-yellow-400 scale-105 text-[11px] font-semibold transition-all" data-tab="tap"><span class="text-xl mb-0.5">🪙</span>Тап</button>
-    <button data-act="tab" data-key="cases" class="tab-btn flex flex-col items-center text-slate-400 text-[11px] font-semibold transition-all" data-tab="cases"><span class="text-xl mb-0.5">🎁</span>Кейсы</button>
-    <button data-act="tab" data-key="inv"   class="tab-btn flex flex-col items-center text-slate-400 text-[11px] font-semibold transition-all" data-tab="inv"><span class="text-xl mb-0.5">🎒</span>Инвентарь</button>
-    <button data-act="tab" data-key="up"    class="tab-btn flex flex-col items-center text-slate-400 text-[11px] font-semibold transition-all" data-tab="up"><span class="text-xl mb-0.5">⚡</span>Прокачка</button>
-    <button data-act="tab" data-key="tasks" class="tab-btn flex flex-col items-center text-slate-400 text-[11px] font-semibold transition-all" data-tab="tasks"><span class="text-xl mb-0.5">📋</span>Задания</button>
-    <button data-act="tab" data-key="top"   class="tab-btn flex flex-col items-center text-slate-400 text-[11px] font-semibold transition-all" data-tab="top"><span class="text-xl mb-0.5">🏆</span>Топ</button>
-</nav>
-
-<script>
-/* ============ Настройки API ============
-   Если на бэкенде эндпоинты называются иначе — поменяй здесь. */
-const EP = {
-    state:   'state',    // получить состояние
-    tap:     'tap',      // { n }
-    open:    'open',     // { case }
-    sell:    'sell',     // { item }  ('all' — продать всё)
-    upgrade: 'upgrade',  // { type }  ('tap' | 'pass')
-    daily:   'daily',
-    claim:   'claim'     // { task }
-};
-
-/* ============ Telegram ============ */
-const tg = window.Telegram?.WebApp || {
-    initData: '', ready() {}, expand() {}, showAlert: m => alert(m),
-    showConfirm: (m, cb) => cb(confirm(m)), HapticFeedback: null,
-    openTelegramLink: u => window.open(u, '_blank')
-};
-tg.ready();
-tg.expand();
-tg.setHeaderColor?.('#060913');
-tg.setBackgroundColor?.('#060913');
-tg.disableVerticalSwipes?.();
-
-const hap = {
-    impact: (s = 'medium') => tg.HapticFeedback?.impactOccurred(s),
-    notify: t => tg.HapticFeedback?.notificationOccurred(t),
-    select: () => tg.HapticFeedback?.selectionChanged()
-};
-
-/* ============ Утилиты ============ */
-const $ = s => document.querySelector(s);
-const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
-const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const fmt = n => Math.floor(Number(n) || 0).toLocaleString('ru-RU');
-const rar = r => {
-    const s = String(r || '').toLowerCase();
-    if (/leg|лег|myth|миф/.test(s)) return 'r-leg';
-    if (/epic|эпи/.test(s)) return 'r-epic';
-    if (/rare|ред|необ/.test(s)) return 'r-rare';
-    return 'r-common';
-};
-const itemOf = k => state?.items?.[k] || { name: k, rarity: '', value: 0 };
-
-function toast(text, type = 'ok') {
-    const el = document.createElement('div');
-    el.className = 'toast fixed left-1/2 z-[200] px-4 py-2 rounded-xl text-xs font-bold shadow-xl pointer-events-none ' +
-        (type === 'err' ? 'bg-red-600 text-white' : 'bg-emerald-500 text-slate-950');
-    el.style.top = 'calc(env(safe-area-inset-top, 0px) + 72px)';
-    el.style.transform = 'translateX(-50%)';
-    el.textContent = text;
-    document.body.appendChild(el);
-    setTimeout(() => el.remove(), 1800);
-}
-
-/* ============ Демо-режим ============
-   Включается сам, когда игра открыта вне Telegram (нет initData),
-   или по ?demo=1. Локальный «сервер» нужен только для просмотра интерфейса. */
-const DEMO = !tg.initData || new URLSearchParams(location.search).has('demo');
-
-const mockServer = (() => {
-    const items = {
-        mouse:  { name: 'Мышка-игрушка', rarity: 'Обычный',    value: 150,   icon: '🐭' },
-        fish:   { name: 'Золотая рыбка', rarity: 'Редкий',     value: 600,   icon: '🐟' },
-        crown:  { name: 'Корона кота',   rarity: 'Эпический',  value: 2500,  icon: '👑' },
-        diamond:{ name: 'Алмазный мяч',  rarity: 'Легендарный',value: 12000, icon: '💎' }
-    };
-    const cases = {
-        basic: { name: 'Обычный кейс', price: 500,  drops: { mouse: 60, fish: 30, crown: 9, diamond: 1 } },
-        gold:  { name: 'Золотой кейс', price: 3000, drops: { mouse: 30, fish: 40, crown: 24, diamond: 6 } }
-    };
-    const db = {
-        me: { coins: 1000, energy: 500, max_energy: 500, tap_power: 1, passive: 0, regen: 1 },
-        inv: {}, opened: 0, upgrades: { tap: 0, pass: 0 },
-        daily: { left: 0, reward: 1000 },
-        link: 'https://t.me/your_bot?start=ref_demo',
-        taskDone: {},
-        top: [
-            { name: 'Барсик', coins: 1250000 }, { name: 'Мурка', coins: 830000 },
-            { name: 'Грустный Кот', coins: 410000 }, { name: 'Пушок', coins: 120000 }
-        ]
-    };
-    const costs = () => ({ tap: 200 * 2 ** db.upgrades.tap, pass: 500 * 2 ** db.upgrades.pass });
-    const tasks = () => [
-        { key: 't1', title: 'Накопить 5 000 монет', goal: 5000, reward: 500, progress: Math.min(5000, Math.floor(db.me.coins)), done: !!db.taskDone.t1 },
-        { key: 't2', title: 'Открыть 3 кейса', goal: 3, reward: 1000, progress: Math.min(3, db.opened), done: !!db.taskDone.t2 }
-    ];
-    const snap = () => JSON.parse(JSON.stringify({
-        me: db.me, cases, items, inv: db.inv, costs: costs(), daily: db.daily,
-        link: db.link, tasks: tasks(), top: [...db.top, { name: 'Ты', coins: Math.floor(db.me.coins) }].sort((a, b) => b.coins - a.coins)
-    }));
-    const err = msg => ({ error: msg, state: snap() });
-
-    return (action, d) => {
-        const m = db.me;
-        if (action === 'tap') {
-            const n = Math.max(0, Math.min(Number(d.n) || 0, 50));
-            const can = Math.min(n, Math.floor(m.energy / m.tap_power));
-            m.coins += can * m.tap_power; m.energy -= can * m.tap_power;
-        } else if (action === 'open') {
-            const c = cases[d.case];
-            if (!c) return err('Кейс не найден');
-            if (m.coins < c.price) return err('Не хватает монет');
-            m.coins -= c.price; db.opened++;
-            let r = Math.random() * 100, drop = Object.keys(c.drops)[0];
-            for (const [k, w] of Object.entries(c.drops)) { r -= w; if (r <= 0) { drop = k; break; } }
-            db.inv[drop] = (db.inv[drop] || 0) + 1;
-            return { drop, state: snap() };
-        } else if (action === 'sell') {
-            const sellOne = k => { m.coins += (db.inv[k] || 0) * items[k].value; delete db.inv[k]; };
-            if (d.item === 'all') Object.keys(db.inv).forEach(sellOne);
-            else if (db.inv[d.item]) sellOne(d.item);
-            else return err('Нет такого предмета');
-        } else if (action === 'upgrade') {
-            const cost = costs()[d.type];
-            if (cost === undefined) return err('Неизвестное улучшение');
-            if (m.coins < cost) return err('Не хватает монет');
-            m.coins -= cost; db.upgrades[d.type]++;
-            if (d.type === 'tap') m.tap_power++; else m.passive += 100;
-        } else if (action === 'daily') {
-            if (db.daily.left > 0) return err('Бонус ещё не готов');
-            m.coins += db.daily.reward; db.daily.left = 86400;
-        } else if (action === 'claim') {
-            const t = tasks().find(x => x.key === d.task);
-            if (!t || t.done || t.progress < t.goal) return err('Задание не выполнено');
-            db.taskDone[t.key] = true; m.coins += t.reward;
+async def handle_buy(request):
+    data = await request.json()
+    uid = int(request.headers.get("X-User-ID", 12345))
+    try:
+        game.buy_upgrade(uid, data.get("kind"))
+    except game.GameError as e:
+        return web.json_response({"error": str(e)})
+    u = game.get_user(uid)
+    return web.json_response({
+        "state": {
+            "me": u,
+            "costs": {"tap": game.tap_upgrade_cost(u), "pass": game.passive_upgrade_cost(u)}
         }
-        return { state: snap() };
-    };
-})();
+    })
 
-/* ============ Состояние и API ============ */
-const initData = tg.initData || '';
-let state = null;
-let currentTab = 'tap';
-let lastRenderedTab = null;
-let pending = 0;      // тапы, ещё не отправленные на сервер
-let flushP = null;
-const busy = new Set();
-
-async function api(action, data = {}, { lock = true, silent = false } = {}) {
-    if (lock) {
-        if (busy.has(action)) return null;
-        busy.add(action);
-    }
-    try {
-        let json;
-        if (DEMO) {
-            json = mockServer(action, data);
-        } else {
-            const res = await fetch('/api/' + action, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'X-Init-Data': initData },
-                body: JSON.stringify(data)
-            });
-            json = await res.json();
+async def handle_open(request):
+    data = await request.json()
+    uid = int(request.headers.get("X-User-ID", 12345))
+    try:
+        drop = game.open_case(uid, data.get("case"))
+    except game.GameError as e:
+        return web.json_response({"error": str(e)})
+    u = game.get_user(uid)
+    return web.json_response({
+        "drop": drop,
+        "state": {
+            "me": u,
+            "inv": {r["item"]: r["qty"] for r in game.inv_get(uid)}
         }
-        if (json.error && !silent) {
-            hap.notify('error');
-            tg.showAlert(json.error);
+    })
+
+async def handle_sell(request):
+    data = await request.json()
+    uid = int(request.headers.get("X-User-ID", 12345))
+    item = data.get("item")
+    try:
+        if item == "all":
+            game.sell_all(uid)
+        else:
+            game.sell(uid, item)
+    except game.GameError as e:
+        return web.json_response({"error": str(e)})
+    u = game.get_user(uid)
+    return web.json_response({
+        "state": {
+            "me": u,
+            "inv": {r["item"]: r["qty"] for r in game.inv_get(uid)}
         }
-        if (json.state) applyState(json.state, action === EP.tap);
-        return json;
-    } catch (e) {
-        console.error(e);
-        if (!silent) toast('Нет связи с сервером', 'err');
-        return null;
-    } finally {
-        if (lock) busy.delete(action);
-    }
-}
+    })
 
-function applyState(s, fromTap = false) {
-    state = s;
-    // Тапы, сделанные пока шёл запрос, накладываем поверх ответа сервера
-    if (pending > 0) {
-        const t = pending * state.me.tap_power;
-        state.me.coins += t;
-        state.me.energy = Math.max(0, state.me.energy - t);
-    }
-    updateHeader();
-    if (fromTap && currentTab === 'tap' && lastRenderedTab === 'tap') updateTapUI();
-    else renderTab();
-}
+async def handle_claim(request):
+    data = await request.json()
+    uid = int(request.headers.get("X-User-ID", 12345))
+    try:
+        got = game.claim_task(uid, data.get("key"))
+    except game.GameError as e:
+        return web.json_response({"error": str(e)})
+    u = game.get_user(uid)
+    return web.json_response({
+        "got": got,
+        "state": {"me": u}
+    })
 
-function flushTaps() {
-    if (flushP) return flushP;
-    if (!pending) return Promise.resolve();
-    const n = pending;
-    pending = 0;
-    flushP = (async () => {
-        try {
-            const res = await api(EP.tap, { n }, { lock: false, silent: true });
-            if (!res) pending += n; // сеть упала — попробуем ещё раз
-        } finally { flushP = null; }
-    })();
-    return flushP;
-}
-async function syncTaps() { await flushTaps(); if (pending) await flushTaps(); }
-async function syncState() { await syncTaps(); return api(EP.state, {}, { silent: true }); }
+async def handle_daily(request):
+    uid = int(request.headers.get("X-User-ID", 12345))
+    try:
+        got = game.claim_daily(uid)
+    except game.GameError as e:
+        return web.json_response({"error": str(e)})
+    u = game.get_user(uid)
+    return web.json_response({
+        "got": got,
+        "state": {"me": u}
+    })
 
-/* ============ Шапка ============ */
-function updateHeader() {
-    if (!state) return;
-    $('#balance').textContent = fmt(state.me.coins);
-    $('#energy').textContent = Math.floor(state.me.energy) + '/' + state.me.max_energy;
-}
+# Middleware для извлечения ID пользователя из Telegram WebApp initData
+@web.middleware
+async def tg_middleware(request, handler):
+    init_data = request.headers.get("X-Init-Data", "")
+    uid = 12345
+    if init_data:
+        try:
+            from urllib.parse import parse_qsl
+            parsed = dict(parse_qsl(init_data))
+            if "user" in parsed:
+                user_obj = json.loads(parsed["user"])
+                uid = int(user_obj["id"])
+        except Exception:
+            pass
+    request.headers.mutable['X-User-ID'] = str(uid)
+    return await handler(request)
 
-/* ============ Вкладки ============ */
-function switchTab(tab) {
-    currentTab = tab;
-    hap.select();
-    document.querySelectorAll('.tab-btn').forEach(btn => {
-        const on = btn.dataset.tab === tab;
-        btn.classList.toggle('text-yellow-400', on);
-        btn.classList.toggle('scale-105', on);
-        btn.classList.toggle('text-slate-400', !on);
-    });
-    renderTab();
-    $('#content').scrollTop = 0;
-}
+async def main():
+    app = web.Application(middlewares=[tg_middleware])
+    
+    # API роуты
+    app.router.add_post('/api/state', handle_state)
+    app.router.add_post('/api/tap', handle_tap)
+    app.router.add_post('/api/buy', handle_buy)
+    app.router.add_post('/api/open', handle_open)
+    app.router.add_post('/api/sell', handle_sell)
+    app.router.add_post('/api/claim', handle_claim)
+    app.router.add_post('/api/daily', handle_daily)
+    
+    # Раздача статики веб-приложения из папки webapp
+    app.router.add_static('/', path='webapp', name='webapp')
 
-function updateTapUI() {
-    if (!state || !$('#tapPower')) return;
-    const m = state.me;
-    $('#tapPower').textContent = '+' + m.tap_power;
-    $('#passive').textContent = fmt(m.passive);
-    $('#energyTxt').textContent = Math.floor(m.energy) + ' / ' + m.max_energy;
-    $('#energyBar').style.width = Math.min(100, (m.energy / m.max_energy) * 100) + '%';
-}
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, '0.0.0.0', PORT)
+    await site.start()
+    
+    logging.info(f"Server started on port {PORT}")
+    
+    # Запуск бота через Long Polling
+    await dp.start_polling(bot)
 
-function updateDailyTimer() {
-    const el = $('#dailyTimer');
-    if (!el || !state) return;
-    const left = state.daily.left;
-    el.textContent = `🎁 Ежедневный бонус через ${Math.floor(left / 3600)}ч ${Math.floor((left % 3600) / 60)}м`;
-}
-
-function renderTab() {
-    const container = $('#content');
-    if (!state) {
-        container.innerHTML = '<div class="text-center text-slate-500 py-24 text-sm">Загрузка…</div>';
-        lastRenderedTab = null;
-        return;
-    }
-    const keepScroll = lastRenderedTab === currentTab ? container.scrollTop : 0;
-    const coins = Math.floor(state.me.coins);
-
-    if (currentTab === 'tap') {
-        container.innerHTML = `
-            <div class="flex flex-col items-center justify-between min-h-full py-2 space-y-4">
-                <div class="w-full glass-card rounded-2xl p-3 flex justify-around text-center shadow-lg border border-white/5">
-                    <div>
-                        <div class="text-[10px] uppercase text-slate-400 font-bold">Сила тапа</div>
-                        <div class="text-base font-black text-yellow-400" id="tapPower">+1</div>
-                    </div>
-                    <div class="w-[1px] bg-white/10"></div>
-                    <div>
-                        <div class="text-[10px] uppercase text-slate-400 font-bold">Пассив / час</div>
-                        <div class="text-base font-black text-emerald-400" id="passive">0</div>
-                    </div>
-                </div>
-
-                <div class="flex-1 flex items-center justify-center my-4">
-                    <button id="coin" aria-label="Тап" class="coin-btn w-60 h-60 rounded-full flex flex-col items-center justify-center cursor-pointer relative border-4 border-yellow-200/50">
-                        <div class="absolute inset-3 rounded-full border-2 border-dashed border-yellow-100/30 pointer-events-none"></div>
-                        <span class="text-7xl select-none pointer-events-none drop-shadow-md">🪙</span>
-                        <span class="text-xs font-black tracking-widest text-yellow-950 uppercase mt-1 bg-yellow-300/60 px-3 py-0.5 rounded-full pointer-events-none">SadCoin</span>
-                    </button>
-                </div>
-
-                <div class="w-full space-y-2">
-                    <div class="flex justify-between text-xs font-bold text-slate-400 px-1">
-                        <span>⚡ Энергия</span>
-                        <span class="text-emerald-400 font-mono" id="energyTxt"></span>
-                    </div>
-                    <div class="w-full bg-slate-950/80 rounded-full h-4 p-0.5 border border-white/10 shadow-inner">
-                        <div id="energyBar" class="bg-gradient-to-r from-emerald-500 to-teal-400 h-full rounded-full shadow-[0_0_12px_rgba(16,185,129,0.5)]" style="width:0%"></div>
-                    </div>
-                </div>
-            </div>`;
-        updateTapUI();
-
-    } else if (currentTab === 'cases') {
-        let html = '<div class="space-y-3"><h2 class="text-lg font-black mb-3 text-slate-200">🎁 Магазин кейсов</h2>';
-        for (const [key, c] of Object.entries(state.cases)) {
-            const can = coins >= c.price;
-            html += `
-                <div class="glass-card rounded-2xl p-4 shadow-xl border border-white/5">
-                    <div class="flex justify-between items-center mb-3">
-                        <div>
-                            <div class="font-extrabold text-base text-slate-100">${esc(c.name)}</div>
-                            <div class="text-xs text-yellow-400 font-bold mt-0.5">${fmt(c.price)} 🪙</div>
-                        </div>
-                        <button data-act="open" data-key="${esc(key)}" class="${can ? '' : 'dim'} bg-gradient-to-r from-yellow-500 to-amber-500 text-slate-950 font-black px-4 py-2.5 rounded-xl shadow-lg shadow-yellow-500/20 active:scale-95 transition-all text-xs">Открыть</button>
-                    </div>
-                    <div class="bg-slate-950/40 rounded-xl p-2.5 border border-white/5 text-[11px] text-slate-400 space-y-1">
+if __name__ == "__main__":
+    import asyncio
+    asyncio.run(main())
     
