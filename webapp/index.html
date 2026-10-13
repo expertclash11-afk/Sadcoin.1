@@ -1,349 +1,295 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-<title>SadCat Coin</title>
-<script src="https://telegram.org/js/telegram-web-app.js"></script>
-<style>
-:root {
-    --bg: #0f1520; --panel: #18202e; --panel2: #202a3b; --line: #2a3548;
-    --text: #e6ebf5; --mute: #8793aa;
-    --brass: #e0a93b; --brass-hi: #f3d58a; --tear: #7cc7ff;
-    --good: #6fd3a0; --bad: #ef6a6a;
-}
-* { box-sizing: border-box; }
-html, body { margin: 0; }
-body {
-    height: var(--tg-viewport-stable-height, 100dvh);
-    display: flex; flex-direction: column; overflow: hidden;
-    background: var(--bg); color: var(--text);
-    font: 15px/1.35 ui-rounded, "SF Pro Rounded", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-    user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent;
-    touch-action: manipulation; overscroll-behavior: none;
-}
-button { font: inherit; color: inherit; cursor: pointer; }
-button:focus-visible { outline: 2px solid var(--brass-hi); outline-offset: 2px; }
-b, .num { font-variant-numeric: tabular-nums; }
-
-/* Шапка */
-.hud { display: flex; justify-content: space-between; align-items: center;
-    padding: calc(14px + env(safe-area-inset-top, 0px)) 18px 12px; border-bottom: 1px solid var(--line); }
-.hud .lbl { color: var(--mute); font-size: 12px; }
-.hud .bal { font-size: 30px; font-weight: 800; line-height: 1.1; color: var(--brass-hi); letter-spacing: -.5px; font-variant-numeric: tabular-nums; }
-.hud .en { font-weight: 700; color: var(--good); font-variant-numeric: tabular-nums; }
-
-/* Контент */
-#view { flex: 1; min-height: 0; overflow-y: auto; padding: 16px 16px calc(96px + env(safe-area-inset-bottom, 0px)); }
-h2 { margin: 0 0 12px; font-size: 20px; font-weight: 800; }
-.sub { color: var(--mute); font-size: 13px; }
-
-/* Нижнее меню */
-#tabs { position: fixed; left: 0; right: 0; bottom: 0; z-index: 50; display: grid; grid-template-columns: repeat(6, 1fr);
-    background: var(--panel); border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom, 0px); }
-#tabs button { background: none; border: 0; padding: 9px 0 8px; color: var(--mute); font-size: 11px; font-weight: 600; position: relative; }
-#tabs button span { display: block; font-size: 20px; margin-bottom: 1px; }
-#tabs button.on { color: var(--brass-hi); }
-#tabs button.on::before { content: ""; position: absolute; top: -1px; left: 22%; right: 22%; height: 2px; background: var(--brass); border-radius: 2px; }
-
-/* Панели и кнопки */
-.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 14px; margin-bottom: 10px; }
-.row { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
-.btn { border: 0; border-radius: 12px; padding: 10px 14px; font-weight: 800; color: #2a1c04; background: var(--brass); white-space: nowrap; transition: transform .08s; }
-.btn:active { transform: scale(.95); }
-.btn.ghost { background: transparent; color: var(--text); border: 1px solid var(--line); font-weight: 700; }
-.btn.bad { background: transparent; color: var(--bad); border: 1px solid rgba(239,106,106,.35); }
-.btn.good { background: var(--good); color: #06281a; }
-.btn.wide { width: 100%; padding: 13px; }
-.dim { opacity: .45; }
-.bar { height: 10px; background: #0b111b; border-radius: 6px; overflow: hidden; border: 1px solid var(--line); }
-.bar i { display: block; height: 100%; width: 0; background: var(--good); border-radius: 6px; }
-.bar.thin { height: 6px; }
-.bar.thin i { background: var(--brass); }
-
-/* Редкость */
-.r0 { --rc: #9aa6bd; } .r1 { --rc: #5db4f0; } .r2 { --rc: #b98cf5; } .r3 { --rc: #f2c14e; } .r4 { --rc: #ff6b9a; }
-.rt { color: var(--rc); }
-.rbar { border-left: 3px solid var(--rc); }
-
-/* Экран тапа */
-.tap { min-height: 100%; display: flex; flex-direction: column; justify-content: space-between; gap: 14px; }
-.stats { display: flex; justify-content: center; gap: 36px; text-align: center; }
-.stats b { display: block; font-size: 20px; }
-.stats span { color: var(--mute); font-size: 12px; }
-#coin { align-self: center; border: 0; background: none; padding: 0; width: min(76vw, 310px, 44dvh); aspect-ratio: 1;
-    touch-action: none; transition: transform .07s cubic-bezier(.2,1.5,.4,1); filter: drop-shadow(0 16px 26px rgba(224,169,59,.22)); }
-#coin:active { transform: scale(.93) rotate(-1.5deg); }
-#coin svg { width: 100%; height: 100%; display: block; pointer-events: none; }
-.energy .row { margin-bottom: 6px; font-size: 13px; color: var(--mute); }
-.energy b { color: var(--good); }
-
-/* Кот: слёзы и усталость */
-.tear { opacity: 0; transform-box: fill-box; transform-origin: center; }
-.cry .tear { animation: drop .8s ease-in forwards; }
-.tired .tear { animation: drip 2.4s ease-in infinite; }
-.tired .tear.t2 { animation-delay: 1.2s; }
-.lid { transition: transform .3s; }
-.tired .lid { transform: translateY(5px); }
-@keyframes drop { 0% { opacity: 1; transform: translateY(0); } 100% { opacity: 0; transform: translateY(40px); } }
-@keyframes drip { 0% { opacity: 0; transform: translateY(0); } 15% { opacity: 1; } 100% { opacity: 0; transform: translateY(40px); } }
-
-.fnum { position: fixed; z-index: 60; pointer-events: none; font-weight: 800; font-size: 24px; color: var(--brass-hi);
-    text-shadow: 0 2px 6px rgba(0,0,0,.8); animation: up .6s ease-out forwards; }
-@keyframes up { 0% { transform: translate(-50%, 0) scale(.8); opacity: 1; } 100% { transform: translate(-50%, -110px) scale(1.1); opacity: 0; } }
-
-/* Тосты и окно */
-.toast { position: fixed; left: 50%; top: calc(env(safe-area-inset-top, 0px) + 78px); transform: translateX(-50%); z-index: 200;
-    padding: 9px 16px; border-radius: 12px; font-weight: 700; font-size: 13px; pointer-events: none; animation: tin .18s ease-out;
-    background: var(--good); color: #06281a; box-shadow: 0 8px 24px rgba(0,0,0,.4); }
-.toast.err { background: var(--bad); color: #fff; }
-@keyframes tin { from { opacity: 0; margin-top: -10px; } to { opacity: 1; margin-top: 0; } }
-#modal { position: fixed; inset: 0; z-index: 100; background: rgba(5,8,14,.86); display: flex; align-items: center; justify-content: center; padding: 18px; }
-.sheet { width: 100%; max-width: 380px; background: var(--panel); border: 1px solid var(--line); border-radius: 22px; padding: 18px; }
-.rl-view { position: relative; overflow: hidden; border-radius: 14px; background: #0b111b; border: 1px solid var(--line); padding: 12px 0; }
-.rl-strip { position: relative; display: flex; will-change: transform; }
-.rl-item { flex: none; width: 104px; height: 112px; margin-right: 8px; border-radius: 12px; border: 2px solid var(--rc);
-    background: var(--panel2); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; text-align: center; padding: 4px; }
-.rl-item .ic { font-size: 28px; } .rl-item .nm { font-size: 11px; font-weight: 700; line-height: 1.15; }
-.rl-mark { position: absolute; top: 0; bottom: 0; left: 50%; width: 3px; margin-left: -1.5px; background: var(--brass-hi); box-shadow: 0 0 10px var(--brass); z-index: 2; }
-.pop { animation: pop .3s cubic-bezier(.2,1.4,.4,1); }
-@keyframes pop { from { transform: scale(.75); opacity: 0; } to { transform: scale(1); opacity: 1; } }
-
-input.ref { width: 100%; background: #0b111b; border: 1px solid var(--line); border-radius: 10px; padding: 9px; color: var(--brass-hi); font: 12px ui-monospace, monospace; margin: 8px 0; }
-
-@media (prefers-reduced-motion: reduce) {
-    .fnum, .toast, .pop, .cry .tear { animation-duration: .01s; }
-    .tired .tear { animation: none; opacity: 1; }
-    #coin { transition: none; }
-}
-</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>SadCat Coin</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <style>
+        :root { --bg-deep: #060913; --card-bg: rgba(15, 23, 42, 0.85); }
+        body { 
+            background-color: var(--bg-deep); 
+            background-image: radial-gradient(circle at 50% 0%, #1e1b4b 0%, #060913 70%);
+            color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
+            touch-action: manipulation; user-select: none; -webkit-user-select: none; 
+        }
+        .glass-card { background: var(--card-bg); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.08); }
+        .coin-btn { 
+            transition: transform 0.06s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            background: radial-gradient(circle at 30% 30%, #fde047 0%, #eab308 50%, #ca8a04 100%);
+            box-shadow: 0 15px 35px rgba(234, 179, 8, 0.3), inset 0 2px 6px rgba(255, 255, 255, 0.6), inset 0 -4px 8px rgba(0, 0, 0, 0.4);
+        }
+        .coin-btn:active { transform: scale(0.92); }
+        @keyframes floatUp {
+            0% { transform: translate(-50%, 0px) scale(0.8); opacity: 1; }
+            50% { transform: translate(-50%, -60px) scale(1.25); opacity: 1; }
+            100% { transform: translate(-50%, -120px) scale(1); opacity: 0; }
+        }
+        .floating-num { animation: floatUp 0.55s ease-out forwards; }
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.15); border-radius: 4px; }
+    </style>
 </head>
-<body>
+<body class="flex flex-col h-screen overflow-hidden">
+    <div class="glass-card border-b p-4 flex justify-between items-center z-20 shadow-2xl">
+        <div class="flex items-center space-x-3">
+            <div class="w-11 h-11 rounded-2xl bg-gradient-to-tr from-yellow-500 to-amber-300 flex items-center justify-center text-2xl shadow-lg shadow-yellow-500/20">🪙</div>
+            <div>
+                <div class="text-[10px] uppercase tracking-widest text-slate-400 font-bold">Баланс SadCoin</div>
+                <div class="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 via-amber-400 to-yellow-500 tracking-tight" id="balance">0</div>
+            </div>
+        </div>
+        <div class="text-right glass-card px-3 py-1.5 rounded-xl border border-white/5">
+            <div class="text-[9px] uppercase tracking-wider text-slate-400 font-semibold">Энергия</div>
+            <div class="text-xs font-black text-emerald-400" id="energy">500/500</div>
+        </div>
+    </div>
 
-<header class="hud">
-    <div><div class="lbl">SadCoin</div><div class="bal" id="balance">0</div></div>
-    <div class="en">⚡ <span id="energy">0/0</span></div>
-</header>
-<main id="view"></main>
-<nav id="tabs">
-    <button data-act="tab" data-key="tap" class="on"><span>🐱</span>Кот</button>
-    <button data-act="tab" data-key="cases"><span>🎁</span>Кейсы</button>
-    <button data-act="tab" data-key="inv"><span>🎒</span>Вещи</button>
-    <button data-act="tab" data-key="up"><span>⚡</span>Прокачка</button>
-    <button data-act="tab" data-key="tasks"><span>📋</span>Задания</button>
-    <button data-act="tab" data-key="top"><span>🏆</span>Топ</button>
-</nav>
+    <div id="content" class="flex-1 overflow-y-auto p-4 pb-28"></div>
 
-<script>
-'use strict';
-/* ======================= Telegram и окружение ======================= */
-const P = new URLSearchParams(location.search);
-const tg = window.Telegram?.WebApp || {
-    initData: '', ready() {}, expand() {}, showAlert: m => alert(m),
-    showConfirm: (m, cb) => cb(confirm(m)), openTelegramLink: u => window.open(u, '_blank'), HapticFeedback: null
-};
-tg.ready(); tg.expand();
-tg.setHeaderColor?.('#0f1520'); tg.setBackgroundColor?.('#0f1520'); tg.disableVerticalSwipes?.();
+    <div class="absolute bottom-0 left-0 right-0 glass-card border-t border-white/10 flex justify-around py-3 px-1 z-50 shadow-[0_-10px_30px_rgba(0,0,0,0.5)]">
+        <button onclick="switchTab('tap')" class="tab-btn flex flex-col items-center text-yellow-400 scale-105 text-[11px] font-semibold transition-all" data-tab="tap">
+            <span class="text-xl mb-0.5">🪙</span>Тап
+        </button>
+        <button onclick="switchTab('cases')" class="tab-btn flex flex-col items-center text-slate-400 text-[11px] font-semibold transition-all" data-tab="cases">
+            <span class="text-xl mb-0.5">🎁</span>Кейсы
+        </button>
+        <button onclick="switchTab('inv')" class="tab-btn flex flex-col items-center text-slate-400 text-[11px] font-semibold transition-all" data-tab="inv">
+            <span class="text-xl mb-0.5">🎒</span>Инвентарь
+        </button>
+        <button onclick="switchTab('up')" class="tab-btn flex flex-col items-center text-slate-400 text-[11px] font-semibold transition-all" data-tab="up">
+            <span class="text-xl mb-0.5">⚡</span>Прокачка
+        </button>
+        <button onclick="switchTab('tasks')" class="tab-btn flex flex-col items-center text-slate-400 text-[11px] font-semibold transition-all" data-tab="tasks">
+            <span class="text-xl mb-0.5">📋</span>Задания
+        </button>
+        <button onclick="switchTab('top')" class="tab-btn flex flex-col items-center text-slate-400 text-[11px] font-semibold transition-all" data-tab="top">
+            <span class="text-xl mb-0.5">🏆</span>Топ
+        </button>
+    </div>
 
-// Вне Telegram (нет initData) включается демо на встроенной заглушке.
-const initData = tg.initData || '';
-const DEMO = !initData;
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.expand();
+        if (tg.setHeaderColor) tg.setHeaderColor('#060913');
 
-const hap = {
-    impact: s => tg.HapticFeedback?.impactOccurred(s || 'light'),
-    notify: t => tg.HapticFeedback?.notificationOccurred(t),
-    select: () => tg.HapticFeedback?.selectionChanged()
-};
-const $ = s => document.querySelector(s);
-const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
-const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const fmt = n => Math.floor(Number(n) || 0).toLocaleString('ru-RU');
-const rar = r => /mega|мега/i.test(r) ? 'r4' : /leg|лег|myth|миф/i.test(r) ? 'r3' : /epic|эпи/i.test(r) ? 'r2' : /rare|ред/i.test(r) ? 'r1' : 'r0';
+        const initData = tg.initData || '';
+        let state = null;
+        let currentTab = 'tap';
 
-function toast(text, err) {
-    const el = document.createElement('div');
-    el.className = 'toast' + (err ? ' err' : '');
-    el.textContent = text;
-    document.body.appendChild(el);
-    setTimeout(() => el.remove(), 1800);
-}
-
-/* ======================= Кот ======================= */
-const CAT = `
-<svg viewBox="0 0 200 200" id="cat" role="img" aria-label="Грустный кот на монете">
-  <defs><radialGradient id="brass" cx=".35" cy=".28" r=".95">
-    <stop offset="0" stop-color="#f8dd86"/><stop offset=".55" stop-color="#e0a93b"/><stop offset="1" stop-color="#a8751d"/></radialGradient></defs>
-  <circle cx="100" cy="100" r="97" fill="url(#brass)"/>
-  <circle cx="100" cy="100" r="88" fill="none" stroke="#fff" stroke-opacity=".35" stroke-width="2" stroke-dasharray="3 7"/>
-  <path d="M47 82 L55 36 L92 62 Z" fill="#8c95a9"/><path d="M153 82 L145 36 L108 62 Z" fill="#8c95a9"/>
-  <path d="M56 70 L60 49 L78 62 Z" fill="#d79aa6"/><path d="M144 70 L140 49 L122 62 Z" fill="#d79aa6"/>
-  <ellipse cx="100" cy="106" rx="57" ry="50" fill="#a4adbf"/>
-  <circle cx="78" cy="106" r="10" fill="#1c2233"/><circle cx="122" cy="106" r="10" fill="#1c2233"/>
-  <circle cx="75" cy="102" r="3.4" fill="#fff"/><circle cx="119" cy="102" r="3.4" fill="#fff"/>
-  <path class="lid" d="M63 88 L94 88 L94 96 L63 105 Z" fill="#a4adbf"/>
-  <path class="lid" d="M137 88 L106 88 L106 96 L137 105 Z" fill="#a4adbf"/>
-  <path d="M94 119 L106 119 L100 126 Z" fill="#d79aa6"/>
-  <path d="M89 138 Q100 128 111 138" fill="none" stroke="#1c2233" stroke-width="3" stroke-linecap="round"/>
-  <g stroke="#1c2233" stroke-opacity=".55" stroke-width="1.6" stroke-linecap="round">
-    <path d="M62 124 L40 120"/><path d="M62 130 L41 134"/><path d="M138 124 L160 120"/><path d="M138 130 L159 134"/></g>
-  <path class="tear" d="M73 117 q-6 10 0 14 q6 -4 0 -14z" fill="#7cc7ff"/>
-  <path class="tear t2" d="M127 117 q-6 10 0 14 q6 -4 0 -14z" fill="#7cc7ff"/>
-</svg>`;
-
-function cry() {
-    const c = $('#cat'); if (!c) return;
-    c.classList.remove('cry'); void c.getBoundingClientRect(); c.classList.add('cry');
-}
-
-/* ======================= Демо-«сервер» (только для просмотра без бэкенда) ======================= */
-const mockServer = (() => {
-    const items = {
-        mouse: { name: '🐭 Игрушечная мышь', rarity: 'Обычная', value: 150 },
-        fish: { name: '🐟 Грустная рыбка', rarity: 'Обычная', value: 400 },
-        yarn: { name: '🧶 Клубок печали', rarity: 'Редкая', value: 1500 },
-        potion: { name: '🧪 Зелье Мяу-эликсира', rarity: 'Редкая', value: 3500 },
-        crown: { name: '👑 Корона кота', rarity: 'Эпическая', value: 8000 },
-        sword: { name: '⚔️ Меч СадКата', rarity: 'Эпическая', value: 18000 },
-        star: { name: '🌟 Звезда SadCat', rarity: 'Мифическая', value: 50000 },
-        blackhole: { name: '🪐 Черная дыра SadCat', rarity: 'МЕГА-ЛЕГЕНДАРНАЯ', value: 500000 }
-    };
-    const cases = {
-        basic: { name: '📦 Обычный кейс', price: 500, drops: { mouse: 60, fish: 32, yarn: 7, crown: 1 } },
-        premium: { name: '💎 Премиум кейс', price: 5000, drops: { fish: 45, yarn: 30, potion: 15, crown: 8, star: 2 } },
-        epic: { name: '🔮 Эпический кейс', price: 25000, drops: { potion: 30, crown: 35, sword: 25, star: 9.5, blackhole: 0.5 } },
-        legendary: { name: '👑 Легендарный кейс', price: 100000, drops: { sword: 40, star: 45, blackhole: 15 } }
-    };
-    const T = [['taps100', 'Сделай 100 тапов', 'taps', 100, 1000], ['taps5000', 'Сделай 5 000 тапов', 'taps', 5000, 10000],
-               ['cases5', 'Открой 5 кейсов', 'opened', 5, 3000], ['friends3', 'Пригласи 3 друзей', 'refs', 3, 25000]];
-    const u = { coins: 1000, energy: 500, ts: Date.now() / 1e3, tap_power: 1, passive: 0, taps: 0, opened: 0, refs: 0, inv: {}, done: {}, daily_at: 0 };
-    const tapCost = () => Math.floor(200 * 1.7 ** (u.tap_power - 1));
-    const passCost = () => Math.floor(1000 * 1.5 ** Math.floor(u.passive / 100));
-    const left = () => Math.max(0, Math.floor(u.daily_at + 86400 - Date.now() / 1e3));
-    const snap = () => JSON.parse(JSON.stringify({
-        me: { id: 1, coins: Math.floor(u.coins), energy: Math.floor(u.energy), max_energy: 500, tap_power: u.tap_power, passive: u.passive },
-        costs: { tap: tapCost(), pass: passCost() }, items, cases, inv: u.inv,
-        tasks: T.map(([key, title, c, goal, reward]) => ({ key, title, goal, reward, progress: Math.min(goal, u[c]), done: !!u.done[key] })),
-        daily: { left: left(), reward: 2000 },
-        top: [{ name: 'Барсик', coins: 1250000 }, { name: 'Мурка', coins: 830000 }, { name: 'Пушок', coins: 120000 }, { name: 'Ты', coins: Math.floor(u.coins) }]
-            .sort((a, b) => b.coins - a.coins),
-        link: 'https://t.me/your_bot?start=ref_1'
-    }));
-    return (action, d) => {
-        const now = Date.now() / 1e3, dt = now - u.ts; u.ts = now;
-        u.energy = Math.min(500, u.energy + dt);
-        u.coins += u.passive * Math.min(dt, 43200) / 3600;
-        const err = m => ({ error: m, state: snap() });
-        const res = { };
-        if (action === 'tap') {
-            const k = Math.min(Math.max(0, Math.floor(+d.n || 0)), Math.floor(u.energy));
-            u.coins += k * u.tap_power; u.energy -= k; u.taps += k; res.counted = k;
-        } else if (action === 'open') {
-            const c = cases[d.case]; if (!c) return err('Кейс не существует'); if (u.coins < c.price) return err('Недостаточно монет');
-            u.coins -= c.price; u.opened++;
-            let r = Math.random() * 100, drop = Object.keys(c.drops)[0];
-            for (const [k, w] of Object.entries(c.drops)) { r -= w; if (r <= 0) { drop = k; break; } }
-            u.inv[drop] = (u.inv[drop] || 0) + 1; res.drop = drop;
-        } else if (action === 'sell') {
-            const ks = d.item === 'all' ? Object.keys(u.inv) : (u.inv[d.item] ? [d.item] : []);
-            if (!ks.length) return err('Предмет не найден в инвентаре');
-            ks.forEach(k => { u.coins += items[k].value * (d.item === 'all' ? u.inv[k] : 1); if (d.item === 'all' || --u.inv[k] <= 0) delete u.inv[k]; });
-        } else if (action === 'buy') {
-            const c = d.kind === 'tap' ? tapCost() : d.kind === 'pass' ? passCost() : 0;
-            if (!c) return err('Неизвестный тип улучшения'); if (u.coins < c) return err('Недостаточно монет');
-            u.coins -= c; if (d.kind === 'tap') u.tap_power++; else u.passive += 100;
-        } else if (action === 'daily') {
-            if (left() > 0) return err('Бонус еще не доступен'); u.coins += 2000; u.daily_at = now;
-        } else if (action === 'claim') {
-            const t = T.find(x => x[0] === d.key); if (!t) return err('Задание не найдено');
-            if (u.done[t[0]]) return err('Награда уже получена'); if (u[t[2]] < t[3]) return err('Условия задания еще не выполнены');
-            u.done[t[0]] = 1; u.coins += t[4];
+        async function api(action, data = {}) {
+            try {
+                const res = await fetch('/api/' + action, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-Init-Data': initData },
+                    body: JSON.stringify(data)
+                });
+                const json = await res.json();
+                if (json.error) {
+                    if (tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('error');
+                    tg.showAlert(json.error);
+                }
+                if (json.state) updateState(json.state);
+                return json;
+            } catch (e) { console.error(e); }
         }
-        res.state = snap();
-        return res;
-    };
-})();
 
-/* ======================= Состояние и API ======================= */
-let state = null, currentTab = 'tap', lastTab = null;
-let pending = 0, flushP = null;
-const busy = new Set();
+        function updateState(newState) {
+            state = newState;
+            document.getElementById('balance').innerText = state.me.coins.toLocaleString();
+            document.getElementById('energy').innerText = Math.floor(state.me.energy) + '/' + state.me.max_energy;
+            renderTab();
+        }
 
-async function api(action, data = {}, { lock = true, silent = false } = {}) {
-    if (lock) { if (busy.has(action)) return null; busy.add(action); }
-    try {
-        let json;
-        if (DEMO) json = mockServer(action, data);
-        else {
-            const res = await fetch('/api/' + action, {
-                method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Init-Data': initData }, body: JSON.stringify(data)
+        function switchTab(tab) {
+            currentTab = tab;
+            if (tg.HapticFeedback) tg.HapticFeedback.selectionChanged();
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                if (btn.dataset.tab === tab) {
+                    btn.classList.add('text-yellow-400', 'scale-105');
+                    btn.classList.remove('text-slate-400');
+                } else {
+                    btn.classList.remove('text-yellow-400', 'scale-105');
+                    btn.classList.add('text-slate-400');
+                }
             });
-            json = await res.json();
+            renderTab();
         }
-        if (json.error && !silent) { hap.notify('error'); tg.showAlert(json.error); }
-        if (json.state) applyState(json.state, action === 'tap');
-        return json;
-    } catch (e) {
-        console.error(e);
-        if (!silent) toast('Нет связи с сервером', true);
-        return null;
-    } finally { if (lock) busy.delete(action); }
-}
 
-function applyState(s, fromTap) {
-    state = s;
-    if (pending > 0) { // тапы, сделанные пока шёл запрос, накладываем поверх ответа
-        s.me.coins += pending * s.me.tap_power; s.me.energy = Math.max(0, s.me.energy - pending);
-    }
-    updateHud();
-    if (fromTap && currentTab === 'tap' && lastTab === 'tap') updateTap(); else render();
-}
+        function renderTab() {
+            if (!state) return;
+            const container = document.getElementById('content');
+            
+            if (currentTab === 'tap') {
+                container.innerHTML = `
+                    <div class="flex flex-col items-center justify-between h-full py-2 space-y-4">
+                        <div class="w-full glass-card rounded-2xl p-3 flex justify-around text-center shadow-lg border border-white/5">
+                            <div>
+                                <div class="text-[10px] uppercase text-slate-400 font-bold">Сила тапа</div>
+                                <div class="text-base font-black text-yellow-400">+${state.me.tap_power}</div>
+                            </div>
+                            <div class="w-[1px] bg-white/10"></div>
+                            <div>
+                                <div class="text-[10px] uppercase text-slate-400 font-bold">Пассив / час</div>
+                                <div class="text-base font-black text-emerald-400">${state.me.passive.toLocaleString()}</div>
+                            </div>
+                        </div>
 
-function flushTaps() {
-    if (flushP) return flushP;
-    if (!pending) return Promise.resolve();
-    const n = pending; pending = 0;
-    flushP = (async () => {
-        try { const r = await api('tap', { n }, { lock: false, silent: true }); if (!r) pending += n; }
-        finally { flushP = null; }
-    })();
-    return flushP;
-}
-async function syncTaps() { await flushTaps(); if (pending) await flushTaps(); }
-async function syncState() { await syncTaps(); return api('state', {}, { silent: true }); }
+                        <div class="flex-1 flex items-center justify-center my-4">
+                            <button onpointerdown="doTap(event)" class="coin-btn w-60 h-60 rounded-full flex flex-col items-center justify-center cursor-pointer relative border-4 border-yellow-200/50">
+                                <div class="absolute inset-3 rounded-full border-2 border-dashed border-yellow-100/30 pointer-events-none"></div>
+                                <span class="text-7xl select-none pointer-events-none filter drop-shadow-md">🪙</span>
+                                <span class="text-xs font-black tracking-widest text-yellow-950 uppercase mt-1 bg-yellow-300/60 px-3 py-0.5 rounded-full backdrop-blur-sm">SadCoin</span>
+                            </button>
+                        </div>
 
-/* ======================= Отрисовка ======================= */
-function updateHud() {
-    if (!state) return;
-    $('#balance').textContent = fmt(state.me.coins);
-    $('#energy').textContent = Math.floor(state.me.energy) + '/' + state.me.max_energy;
-}
+                        <div class="w-full space-y-2">
+                            <div class="flex justify-between text-xs font-bold text-slate-400 px-1">
+                                <span>⚡ Энергия</span>
+                                <span class="text-emerald-400 font-mono">${Math.floor(state.me.energy)} / ${state.me.max_energy}</span>
+                            </div>
+                            <div class="w-full bg-slate-950/80 rounded-full h-4 p-0.5 border border-white/10 shadow-inner">
+                                <div class="bg-gradient-to-r from-emerald-500 to-teal-400 h-full rounded-full transition-all duration-150 shadow-[0_0_12px_rgba(16,185,129,0.5)]" style="width: ${(state.me.energy / state.me.max_energy) * 100}%"></div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            } else if (currentTab === 'cases') {
+                let html = '<div class="space-y-3"><h2 class="text-lg font-black mb-3 text-slate-200 flex items-center gap-2">🎁 Магазин кейсов</h2>';
+                for (const [key, c] of Object.entries(state.cases)) {
+                    html += `
+                        <div class="glass-card rounded-2xl p-4 shadow-xl border border-white/5 relative overflow-hidden">
+                            <div class="flex justify-between items-center mb-3">
+                                <div>
+                                    <div class="font-extrabold text-base text-slate-100">${c.name}</div>
+                                    <div class="text-xs text-yellow-400 font-bold mt-0.5">${c.price.toLocaleString()} 🪙</div>
+                                </div>
+                                <button onclick="openCase('${key}')" class="bg-gradient-to-r from-yellow-500 to-amber-500 hover:from-yellow-400 hover:to-amber-400 text-slate-950 font-black px-4 py-2.5 rounded-xl shadow-lg shadow-yellow-500/20 active:scale-95 transition-all text-xs">Открыть</button>
+                            </div>
+                            <div class="bg-slate-950/40 rounded-xl p-2.5 border border-white/5 text-[11px] text-slate-400 space-y-1">
+                                <div class="font-semibold text-slate-300 mb-1">Возможный дроп:</div>
+                                ${Object.entries(c.drops).map(([i, w]) => `<div class="flex justify-between"><span>${state.items[i].name} (${state.items[i].rarity})</span><span class="text-yellow-400 font-mono font-bold">${w}%</span></div>`).join('')}
+                            </div>
+                        </div>
+                    `;
+                }
+                container.innerHTML = html + '</div>';
+            } else if (currentTab === 'inv') {
+                let itemsHtml = '';
+                const inv = state.inv;
+                if (Object.keys(inv).length === 0) {
+                    itemsHtml = '<div class="text-center text-slate-500 py-20"><div class="text-5xl mb-3">📦</div>Инвентарь пуст.<br>Открывайте кейсы во вкладке «Кейсы»!</div>';
+                } else {
+                    itemsHtml = '<div class="grid grid-cols-1 gap-2.5">';
+                    for (const [itemKey, qty] of Object.entries(inv)) {
+                        const item = state.items[itemKey];
+                        itemsHtml += `
+                            <div class="glass-card rounded-2xl p-3.5 flex justify-between items-center shadow-lg border border-white/5">
+                                <div class="space-y-0.5">
+                                    <div class="font-bold text-sm">${item.name} <span class="text-xs text-yellow-400 font-bold">×${qty}</span></div>
+                                    <div class="text-[11px] text-slate-400">${item.rarity} · Цена: <span class="text-yellow-400 font-semibold">${item.value.toLocaleString()} 🪙</span></div>
+                                </div>
+                                <button onclick="sellItem('${itemKey}')" class="bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 px-3 py-1.5 rounded-xl text-xs font-bold active:scale-95 transition">Продать</button>
+                            </div>
+                        `;
+                    }
+                    itemsHtml += '</div><button onclick="sellItem(\'all\')" class="w-full mt-4 bg-gradient-to-r from-red-600 to-rose-600 text-white font-bold py-3 rounded-2xl shadow-xl shadow-red-600/25 active:scale-95 transition text-sm">Продать всё за монеты</button>';
+                }
+                container.innerHTML = `<h2 class="text-lg font-black mb-3 text-slate-200">🎒 Инвентарь</h2>` + itemsHtml;
+            } else if (currentTab === 'up') {
+                container.innerHTML = `
+                    <h2 class="text-lg font-black mb-3 text-slate-200">⚡ Улучшения</h2>
+                    <div class="space-y-3">
+                        <div class="glass-card rounded-2xl p-4 flex justify-between items-center shadow-xl border border-white/5">
+                            <div>
+                                <div class="font-bold text-sm">Сила тапа (+1)</div>
+                                <div class="text-xs text-slate-400 mt-0.5">Мощь: <span class="text-yellow-400 font-semibold">+${state.me.tap_power}</span></div>
+                            </div>
+                            <button onclick="buyUpgrade('tap')" class="bg-gradient-to-r from-yellow-500 to-amber-500 text-slate-950 font-black px-4 py-2.5 rounded-xl shadow-lg active:scale-95 transition text-xs">${state.costs.tap.toLocaleString()} 🪙</button>
+                        </div>
+                        <div class="glass-card rounded-2xl p-4 flex justify-between items-center shadow-xl border border-white/5">
+                            <div>
+                                <div class="font-bold text-sm">Пассивный доход (+100/ч)</div>
+                                <div class="text-xs text-slate-400 mt-0.5">Доход: <span class="text-emerald-400 font-semibold">${state.me.passive.toLocaleString()}/ч</span></div>
+                            </div>
+                            <button onclick="buyUpgrade('pass')" class="bg-gradient-to-r from-yellow-500 to-amber-500 text-slate-950 font-black px-4 py-2.5 rounded-xl shadow-lg active:scale-95 transition text-xs">${state.costs.pass.toLocaleString()} 🪙</button>
+                        </div>
+                    </div>
+                `;
+            } else if (currentTab === 'tasks') {
+                let tasksHtml = '';
+                if (state.daily.left <= 0) {
+                    tasksHtml += `<button onclick="claimDaily()" class="w-full mb-3 bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-bold py-3 rounded-2xl shadow-xl shadow-emerald-600/25 active:scale-95 transition text-sm">🎁 Забрать ежедневный бонус (+${state.daily.reward.toLocaleString()})</button>`;
+                } else {
+                    const h = Math.floor(state.daily.left / 3600);
+                    const m = Math.floor((state.daily.left % 3600) / 60);
+                    tasksHtml += `<div class="glass-card text-center p-3 rounded-2xl mb-3 text-slate-400 text-xs border border-white/5">🎁 Ежедневный бонус через ${h}ч ${m}м</div>`;
+                }
 
-function updateTap() {
-    if (!state || !$('#tapPower')) return;
-    const m = state.me;
-    $('#tapPower').textContent = '+' + m.tap_power;
-    $('#passive').textContent = fmt(m.passive);
-    $('#energyTxt').textContent = Math.floor(m.energy) + ' / ' + m.max_energy;
-    $('#energyBar').style.width = Math.min(100, m.energy / m.max_energy * 100) + '%';
-    $('#cat')?.classList.toggle('tired', m.energy / m.max_energy < 0.1);
-}
+                tasksHtml += `
+                    <div class="glass-card rounded-2xl p-4 mb-3 shadow-xl border border-white/5">
+                        <div class="font-bold text-xs mb-1">🔗 Реферальная ссылка</div>
+                        <input type="text" readonly value="${state.link}" onclick="this.select()" class="w-full bg-slate-950/80 border border-white/10 rounded-xl p-2 text-xs text-yellow-400 font-mono select-all focus:outline-none">
+                    </div>
+                `;
 
-function updateDaily() {
-    const el = $('#dailyTimer');
-    if (el && state) el.textContent = `Бонус дня через ${Math.floor(state.daily.left / 3600)} ч ${Math.floor(state.daily.left % 3600 / 60)} мин`;
-}
+                for (const t of state.tasks) {
+                    tasksHtml += `
+                        <div class="glass-card rounded-2xl p-3.5 mb-2.5 flex justify-between items-center shadow-xl border border-white/5">
+                            <div>
+                                <div class="font-bold text-xs">${t.title}</div>
+                                <div class="text-[11px] text-slate-400 mt-0.5">${t.progress.toLocaleString()} / ${t.goal.toLocaleString()} · <span class="text-yellow-400 font-semibold">+${t.reward.toLocaleString()} 🪙</span></div>
+                            </div>
+                            ${t.done ? '<span class="text-emerald-400 font-bold text-xs bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1 rounded-xl">✓ Готово</span>' : (t.progress >= t.goal ? `<button onclick="claimTask('${t.key}')" class="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black px-3.5 py-1.5 rounded-xl text-xs shadow-lg active:scale-95 transition">Забрать</button>` : '<span class="text-slate-500 text-xs">В процессе</span>')}
+                        </div>
+                    `;
+                }
+                container.innerHTML = `<h2 class="text-lg font-black mb-3 text-slate-200">📋 Задания</h2>` + tasksHtml;
+            } else if (currentTab === 'top') {
+                let topHtml = '<div class="space-y-2">';
+                state.top.forEach((u, index) => {
+                    let rankBg = index === 0 ? 'bg-yellow-500/10 border-yellow-500/30 text-yellow-400' : (index === 1 ? 'bg-slate-300/10 border-slate-300/20 text-slate-200' : (index === 2 ? 'bg-amber-700/10 border-amber-700/20 text-amber-500' : 'glass-card text-slate-400'));
+                    topHtml += `
+                        <div class="border rounded-2xl p-3 flex justify-between items-center shadow-lg ${rankBg}">
+                            <div class="flex items-center space-x-3">
+                                <span class="font-black w-6 text-center text-xs">#${index + 1}</span>
+                                <span class="font-bold text-slate-100 text-xs">${u.name}</span>
+                            </div>
+                            <span class="font-black text-yellow-400 text-xs">${u.coins.toLocaleString()} 🪙</span>
+                        </div>
+                    `;
+                });
+                container.innerHTML = `<h2 class="text-lg font-black mb-3 text-slate-200">🏆 Топ игроков</h2>` + topHtml + '</div>';
+            }
+        }
 
-function switchTab(tab) {
-    currentTab = tab; hap.select();
-    document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.key === tab));
-    render(); $('#view').scrollTop = 0;
-}
+        async function doTap(e) {
+            const res = await api('tap', { n: 1 });
+            if (res && res.counted) {
+                if (tg.HapticFeedback) tg.HapticFeedback.impactOccurred('medium');
+                
+                const clientX = e.clientX || (e.touches && e.touches[0].clientX) || (window.innerWidth / 2);
+                const clientY = e.clientY || (e.touches && e.touches[0].clientY) || (window.innerHeight / 2);
+                
+                const el = document.createElement('div');
+                el.innerText = '+' + state.me.tap_power;
+                el.className = 'fixed floating-num text-yellow-400 font-black text-2xl pointer-events-none z-50 drop-shadow-[0_2px_6px_rgba(0,0,0,0.9)]';
+                el.style.left = clientX + 'px';
+                el.style.top = clientY + 'px';
+                document.body.appendChild(el);
+                setTimeout(() => el.remove(), 550);
+            }
+        }
 
-const UPS = [
-    { k: 'tap', t: 'Сила тапа', d: s => `+${s.me.tap_power} → +${s.me.tap_power + 1} за тап` },
-    { k: 'pass', t: 'Пассивный доход', d: s => `${fmt(s.me.passive)} → ${fmt(s.me.passive + 100)} в час` }
-];
-const itemOf = k => state?.items?.[k] || { name: k, rarity: '', value: 0 };
-const EMO = /^\p{Extended_Pictographic}/u;
-const iconOf = it => it.icon || (EMO.test(it.name) ? it.name.split(' ')[0] : '🎁');
-con
+        async function openCase(caseKey) {
+            if (tg.HapticFeedback) tg.HapticFeedback.impactOccurred('heavy');
+            const res = await api('open', { case: caseKey });
+            if (res && res.drop) {
+                const item = state.items[res.drop];
+                tg.showAlert(`🎉 Поздравляем!\n\nВам выпало:\n${item.name}\nРедкость: ${item.rarity}\nЦена: ${item.value.toLocaleString()} 🪙`);
+            }
+        }
+
+        async function sellItem(itemKey) { 
+            if (tg.HapticFeedback) tg.Ha
