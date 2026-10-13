@@ -1,232 +1,148 @@
-import asyncio, logging, os, time
-from aiogram import Bot, Dispatcher, F
-from aiogram.filters import CommandStart, CommandObject
-from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
-from aiogram.exceptions import TelegramBadRequest, TelegramRetryAfter
-import game as g
+import asyncio
+import logging
+import random
+from aiogram import Bot, Dispatcher, F, types
+from aiogram.filters import Command
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-TOKEN = os.getenv("BOT_TOKEN", "")
+# Укажи токен твоего бота, полученный у @BotFather
+API_TOKEN = "YOUR_BOT_TOKEN_HERE"
+
+bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
-BOT_USERNAME = ""
 
+# База данных пользователей в памяти (user_id: balance)
+# В будущем ее можно заменить на SQLite или PostgreSQL
+user_balances = {}
 
-def n(x):
-    return f"{int(x):,}".replace(",", " ")
+def get_balance(user_id: int) -> int:
+    """Получить баланс пользователя (если нет — даем стартовый бонус)"""
+    if user_id not in user_balances:
+        user_balances[user_id] = 1000  # Стартовый бонус: 1000 коинов
+    return user_balances[user_id]
 
+def update_balance(user_id: int, amount: int):
+    """Изменить баланс пользователя"""
+    user_balances[user_id] = get_balance(user_id) + amount
 
-def kb(*rows):
-    return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=t, callback_data=d) for t, d in r] for r in rows])
+@dp.message(Command("start"))
+async def cmd_start(message: types.Message):
+    user_id = message.from_user.id
+    balance = get_balance(user_id)
+    
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🎮 Играть в Апгрейд", callback_data="game_upgrade")
+    builder.button(text="💰 Мой баланс", callback_data="balance")
+    builder.adjust(1)
+    
+    await message.answer(
+        f"👋 Привет! Добро пожаловать в игровой бот.\n\n"
+        f"💳 Твой баланс: **{balance} коинов** 🪙\n\n"
+        f"Выбери действие в меню ниже:",
+        reply_markup=builder.as_markup(),
+        parse_mode="Markdown"
+    )
 
+@dp.callback_query(F.data == "balance")
+async def cb_balance(callback: types.CallbackQuery):
+    user_id = callback.from_user.id
+    balance = get_balance(user_id)
+    await callback.answer(f"Твой текущий баланс: {balance} коинов 🪙", show_alert=True)
 
-BACK = [("⬅️ Меню", "m")]
+@dp.callback_query(F.data == "game_upgrade")
+async def cb_upgrade_menu(callback: types.CallbackQuery):
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🟢 Риск 50% (Шанс x2)", callback_data="upgrade_50")
+    builder.button(text="🟡 Риск 25% (Шанс x4)", callback_data="upgrade_25")
+    builder.button(text="🔙 Назад в меню", callback_data="back_to_main")
+    builder.adjust(1)
+    
+    await callback.message.edit_text(
+        "📈 **ИГРА: АПГРЕЙД**\n\n"
+        "Ставка фиксированная: **100 коинов** 🪙\n"
+        "Выбери режим риска:",
+        reply_markup=builder.as_markup(),
+        parse_mode="Markdown"
+    )
+    await callback.answer()
 
+@dp.callback_query(F.data.startswith("upgrade_"))
+async def cb_play_upgrade(callback: types.CallbackQuery):
+    user_id = callback.from_user.id
+    balance = get_balance(user_id)
+    bet = 100  # Фиксированная ставка
 
-def bar(v, mx, w=10):
-    f = int(w * v / mx) if mx else 0
-    return "▰" * f + "▱" * (w - f)
-
-
-# ---------- screens ----------
-def s_menu(u):
-    t = (f"😿 <b>SadCoin</b>\n\n💰 Монеты: <b>{n(u['coins'])}</b>\n"
-         f"⚡ Энергия: {n(u['energy'])}/{n(u['max_energy'])}\n"
-         f"👆 За тап: {u['tap_power']} | ⛏ В час: {n(u['passive'])}")
-    return t, kb([("🐱 ТАПАТЬ", "t")],
-                 [("🚀 Улучшения", "up"), ("📦 Кейсы", "cs")],
-                 [("🎒 Инвентарь", "inv"), ("📋 Задания", "tk")],
-                 [("🎁 Бонус", "dl"), ("👥 Друзья", "fr")],
-                 [("🏆 Топ", "top"), ("👤 Профиль", "pr")])
-
-
-def s_tap(u):
-    t = (f"💰 <b>{n(u['coins'])}</b>\n⚡ {bar(u['energy'], u['max_energy'])} {n(u['energy'])}/{n(u['max_energy'])}\n"
-         f"👆 +{u['tap_power']} за тап")
-    return t, kb([("🐱 ТАП!", "t")], BACK)
-
-
-def s_up(u):
-    tc, pc = g.tap_upgrade_cost(u), g.passive_upgrade_cost(u)
-    t = (f"🚀 <b>Улучшения</b>\n💰 {n(u['coins'])}\n\n"
-         f"👆 Сила тапа: {u['tap_power']} → {u['tap_power'] + 1}\nЦена: {n(tc)}\n\n"
-         f"⛏ Пассивный доход: {n(u['passive'])}/ч → {n(u['passive'] + 100)}/ч\nЦена: {n(pc)}")
-    return t, kb([(f"👆 +1 тап ({n(tc)})", "ub:tap")], [(f"⛏ +100/ч ({n(pc)})", "ub:pass")], BACK)
-
-
-def s_cases(u):
-    t = f"📦 <b>Кейсы</b>\n💰 {n(u['coins'])}\n\n"
-    rows = []
-    for k, (name, price, drops) in g.CASES.items():
-        tot = sum(drops.values())
-        t += f"{name} — {n(price)}\n" + "".join(
-            f"   {g.ITEMS[i][0]} {w / tot * 100:.1f}%\n" for i, w in drops.items()) + "\n"
-        rows.append([(f"{name} ({n(price)})", f"co:{k}")])
-    return t, kb(*rows, BACK)
-
-
-def s_inv(uid):
-    items = g.inv_get(uid)
-    if not items:
-        return "🎒 Инвентарь пуст. Открой кейс!", kb([("📦 Кейсы", "cs")], BACK)
-    t, rows, total = "🎒 <b>Инвентарь</b>\n\n", [], 0
-    for r in items:
-        nm, rar, pr = g.ITEMS[r["item"]]
-        total += pr * r["qty"]
-        t += f"{nm} ×{r['qty']} ({rar}) — {n(pr)}\n"
-        rows.append([(f"Продать {nm} ({n(pr)})", f"s:{r['item']}")])
-    rows.append([(f"💸 Продать всё ({n(total)})", "sa")])
-    return t, kb(*rows, BACK)
-
-
-def s_tasks(u):
-    done = g.done_tasks(u["id"])
-    t, rows = "📋 <b>Задания</b>\n\n", []
-    for k, (name, kind, goal, rew) in g.TASKS.items():
-        p = min(g.task_progress(u, kind), goal)
-        if k in done:
-            t += f"✅ {name}\n"
-        else:
-            t += f"▫️ {name}: {n(p)}/{n(goal)} → 💰{n(rew)}\n"
-            if p >= goal:
-                rows.append([(f"🎁 Забрать: {name}", f"tc:{k}")])
-    return t, kb(*rows, BACK)
-
-
-def s_daily(u):
-    left = g.daily_left(u)
-    if left > 0:
-        h, m = int(left // 3600), int(left % 3600 // 60)
-        return f"🎁 Бонус будет через {h}ч {m}м", kb(BACK)
-    return f"🎁 Ежедневный бонус: <b>{n(g.DAILY_REWARD)}</b> монет!", kb([("Забрать", "dc")], BACK)
-
-
-def s_friends(u):
-    tot, paid = g.ref_counts(u["id"])
-    link = f"https://t.me/{BOT_USERNAME}?start=ref_{u['id']}"
-    t = (f"👥 <b>Друзья</b>\n\nПриглашено: {tot} (активных: {paid})\n"
-         f"За каждого, кто сделал {g.REF_MIN_TAPS} тапов: 💰{n(g.REF_REWARD)}\n\n🔗 Твоя ссылка:\n{link}")
-    return t, kb(BACK)
-
-
-def s_top():
-    rows = g.top_users(10)
-    medals = ["🥇", "🥈", "🥉"]
-    t = "🏆 <b>Топ-10</b>\n\n" + "\n".join(
-        f"{medals[i] if i < 3 else str(i + 1) + '.'} {r['name']} — {n(r['coins'])}" for i, r in enumerate(rows))
-    return t, kb(BACK)
-
-
-def s_profile(u):
-    tot, paid = g.ref_counts(u["id"])
-    t = (f"👤 <b>{u['name']}</b>\n\n💰 {n(u['coins'])}\n👆 Тапов: {n(u['taps'])}\n"
-         f"📦 Кейсов: {u['cases_opened']}\n👥 Друзей: {tot}\n⛏ В час: {n(u['passive'])}")
-    return t, kb(BACK)
-
-
-# ---------- handlers ----------
-async def show(c: CallbackQuery, scr):
-    text, markup = scr
-    try:
-        await c.message.edit_text(text, reply_markup=markup, parse_mode="HTML", disable_web_page_preview=True)
-    except TelegramBadRequest:
-        pass
-    except TelegramRetryAfter:
-        pass
-
-
-@dp.message(CommandStart())
-async def start(m: Message, command: CommandObject):
-    uid = m.from_user.id
-    is_new = not g.user_exists(uid)
-    if is_new and command.args and command.args.startswith("ref_"):
-        try:
-            g.register_referral(uid, int(command.args[4:]))
-        except ValueError:
-            pass
-    u = g.get_user(uid, m.from_user.full_name, m.from_user.username)
-    t, k = s_menu(u)
-    await m.answer("Добро пожаловать в SadCoin! 😿\n\n" + t, reply_markup=k, parse_mode="HTML")
-
-
-@dp.callback_query()
-async def cb(c: CallbackQuery):
-    uid, d = c.from_user.id, c.data
-    u = g.get_user(uid, c.from_user.full_name, c.from_user.username)
-    try:
-        if d == "m":
-            await show(c, s_menu(u))
-        elif d == "t":
-            if g.tap(uid) == 0 and u["energy"] < 1:
-                await c.answer("⚡ Нет энергии, подожди", show_alert=False)
-                return
-            await show(c, s_tap(g.get_user(uid)))
-        elif d == "up":
-            await show(c, s_up(u))
-        elif d.startswith("ub:"):
-            kind = d[3:]
-            cost = g.tap_upgrade_cost(u) if kind == "tap" else g.passive_upgrade_cost(u)
-            if u["coins"] < cost:
-                raise g.GameError("Недостаточно монет")
-            g.buy_upgrade(uid, kind)
-            await c.answer("✅ Улучшено!")
-            await show(c, s_up(g.get_user(uid)))
-            return
-        elif d == "cs":
-            await show(c, s_cases(u))
-        elif d.startswith("co:"):
-            key = d[3:]
-            item = g.open_case(uid, key)
-            nm, rar, pr = g.ITEMS[item]
-            u = g.get_user(uid)
-            t = f"🎉 Выпало: <b>{nm}</b>\nРедкость: {rar}\nЦена: {n(pr)}\n\n💰 {n(u['coins'])}"
-            await show(c, (t, kb([("🔁 Ещё раз", d)], [("🎒 Инвентарь", "inv")], BACK)))
-        elif d == "inv":
-            await show(c, s_inv(uid))
-        elif d.startswith("s:"):
-            v = g.sell(uid, d[2:])
-            await c.answer(f"+{n(v)} 💰")
-            await show(c, s_inv(uid))
-            return
-        elif d == "sa":
-            v = g.sell_all(uid)
-            await c.answer(f"+{n(v)} 💰")
-            await show(c, s_inv(uid))
-            return
-        elif d == "tk":
-            await show(c, s_tasks(u))
-        elif d.startswith("tc:"):
-            r = g.claim_task(uid, d[3:])
-            await c.answer(f"🎁 +{n(r)}")
-            await show(c, s_tasks(g.get_user(uid)))
-            return
-        elif d == "dl":
-            await show(c, s_daily(u))
-        elif d == "dc":
-            r = g.claim_daily(uid)
-            await c.answer(f"🎁 +{n(r)}")
-            await show(c, s_daily(g.get_user(uid)))
-            return
-        elif d == "fr":
-            await show(c, s_friends(u))
-        elif d == "top":
-            await show(c, s_top())
-        elif d == "pr":
-            await show(c, s_profile(u))
-    except g.GameError as e:
-        await c.answer(str(e), show_alert=True)
+    if balance < bet:
+        await callback.answer("❌ У тебя недостаточно коинов для ставки!", show_alert=True)
         return
-    await c.answer()
 
+    risk_type = callback.data.split("_")[1]
+    
+    if risk_type == "50":
+        chance = 50
+        multiplier = 2
+    elif risk_type == "25":
+        chance = 25
+        multiplier = 4
+    else:
+        return
+
+    # Списываем ставку
+    update_balance(user_id, -bet)
+    
+    # Розыгрыш (рандом от 1 до 100)
+    win = random.randint(1, 100) <= chance
+    
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🔄 Играть еще", callback_data="game_upgrade")
+    builder.button(text="🔙 Назад в меню", callback_data="back_to_main")
+    builder.adjust(1)
+
+    if win:
+        win_amount = bet * multiplier
+        update_balance(user_id, win_amount)
+        new_balance = get_balance(user_id)
+        text = (
+            f"🎉 **ПОБЕДА!**\n\n"
+            f"Удача на твоей стороне!\n"
+            f"Выигрыш: **+{win_amount} коинов** (x{multiplier})\n"
+            f"💳 Баланс: **{new_balance} коинов** 🪙"
+        )
+    else:
+        new_balance = get_balance(user_id)
+        text = (
+            f"😢 **ПРОИГРЫШ**\n\n"
+            f"В этот раз не повезло.\n"
+            f"Потеряно: **-{bet} коинов**\n"
+            f"💳 Баланс: **{new_balance} коинов** 🪙"
+        )
+
+    await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="Markdown")
+    await callback.answer()
+
+@dp.callback_query(F.data == "back_to_main")
+async def cb_back(callback: types.CallbackQuery):
+    user_id = callback.from_user.id
+    balance = get_balance(user_id)
+    
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🎮 Играть в Апгрейд", callback_data="game_upgrade")
+    builder.button(text="💰 Мой баланс", callback_data="balance")
+    builder.adjust(1)
+    
+    await callback.message.edit_text(
+        f"👋 Главное меню:\n\n"
+        f"💳 Твой баланс: **{balance} коинов** 🪙",
+        reply_markup=builder.as_markup(),
+        parse_mode="Markdown"
+    )
+    await callback.answer()
 
 async def main():
-    global BOT_USERNAME
     logging.basicConfig(level=logging.INFO)
-    if not TOKEN:
-        raise SystemExit("Задай переменную окружения BOT_TOKEN")
-    bot = Bot(TOKEN)
-    BOT_USERNAME = (await bot.get_me()).username
+    print("Бот запущен и готов к работе...")
     await dp.start_polling(bot)
-
 
 if __name__ == "__main__":
     asyncio.run(main())
-                       
+    
